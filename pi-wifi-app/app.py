@@ -379,80 +379,77 @@ def login():
 
 @app.route('/logout')
 def logout():
-    """Destroys the current user session and redirects to the login screen."""
+    """Destroys the current user session and redirects back to the SPA index."""
     session.pop('logged_in', None)
-    return redirect(url_for('login'))
-
-@app.route('/settings', methods=['GET', 'POST'])
-def settings():
-    """Handles Web Application settings (Auth credentials and Port bindings)."""
-    if request.method == 'POST':
-        new_user = request.form.get('username')
-        new_pw = request.form.get('password')
-        if new_user and new_pw:
-            hashed = generate_password_hash(new_pw)
-            with open(user_file, 'w') as f: f.write(f"{new_user}:{hashed}")
-            session.permanent = True
-            session['logged_in'] = True
-            
-        new_port_str = request.form.get('port')
-        port_changed_to = None
-        if new_port_str and new_port_str.isdigit():
-            new_port = int(new_port_str)
-            current_port = get_current_port()
-            if new_port != current_port:
-                with open(port_file_path + '.bak', 'w') as f: f.write(str(current_port))
-                with open(port_file_path, 'w') as f: f.write(str(new_port))
-                subprocess.Popen(['/bin/sh', '-c', 'sleep 1.5 && systemctl restart pi-wifi-app.service'])
-                port_changed_to = new_port
-                
-        if port_changed_to:
-            return f"""
-            <html>
-            <body style='font-family:sans-serif; text-align:center; margin-top:50px; background:#121212; color:white;'>
-                <h2>Changing Port to {port_changed_to}...</h2>
-                <p>Please wait while the service restarts. You will be redirected automatically.</p>
-                <script>setTimeout(() => {{ window.location.href = window.location.protocol + '//' + window.location.hostname + ':{port_changed_to}/'; }}, 3500);</script>
-            </body>
-            </html>
-            """
-    # Redirect GET requests safely back to the SPA index
     return redirect(url_for('index'))
 
-@app.route('/hotspot', methods=['GET', 'POST'])
-def hotspot_page():
-    """Handles configuring, enabling/disabling, and prioritizing the Wi-Fi Hotspot."""
-    if request.method == 'POST':
-        action = request.form.get('action')
-        force_hs = request.form.get('force_hotspot') == 'on'
-        device = request.form.get('device')
+@app.route('/settings', methods=['POST'])
+def settings():
+    """Handles Web Application settings (Auth credentials and Port bindings) via form submission."""
+    new_user = request.form.get('username')
+    new_pw = request.form.get('password')
+    if new_user and new_pw:
+        hashed = generate_password_hash(new_pw)
+        with open(user_file, 'w') as f: f.write(f"{new_user}:{hashed}")
+        session.permanent = True
+        session['logged_in'] = True
         
-        with open(hotspot_policy_file, 'w') as f: f.write('true' if force_hs else 'false')
-        set_hotspot_priority(100 if force_hs else 0)
-        
-        hs_info = get_hotspot_config()
-        profile_name = hs_info['name']
-        
-        if action == 'save_and_toggle':
-            new_ssid = request.form.get('ssid')
-            new_pass = request.form.get('password')
-            enable_hs = request.form.get('enable_hotspot') == 'on'
+    new_port_str = request.form.get('port')
+    port_changed_to = None
+    if new_port_str and new_port_str.isdigit():
+        new_port = int(new_port_str)
+        current_port = get_current_port()
+        if new_port != current_port:
+            with open(port_file_path + '.bak', 'w') as f: f.write(str(current_port))
+            with open(port_file_path, 'w') as f: f.write(str(new_port))
+            subprocess.Popen(['/bin/sh', '-c', 'sleep 1.5 && systemctl restart pi-wifi-app.service'])
+            port_changed_to = new_port
             
-            check_exists = subprocess.run(['nmcli', '-t', '-f', 'NAME', 'con', 'show', profile_name], capture_output=True, text=True)
-            if profile_name not in check_exists.stdout:
-                if not device: device = 'wlan0'
-                subprocess.run(['sudo', 'nmcli', 'con', 'add', 'type', 'wifi', 'ifname', device, 'con-name', profile_name, 'autoconnect', 'no', 'ssid', new_ssid])
-                subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless.mode', 'ap', '802-11-wireless.band', 'bg', 'ipv4.method', 'shared'])
-            else:
-                if device: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, 'connection.interface-name', device])
+    if port_changed_to:
+        return f"""
+        <html>
+        <body style='font-family:sans-serif; text-align:center; margin-top:50px; background:#121212; color:white;'>
+            <h2>Changing Port to {port_changed_to}...</h2>
+            <p>Please wait while the service restarts. You will be redirected automatically.</p>
+            <script>setTimeout(() => {{ window.location.href = window.location.protocol + '//' + window.location.hostname + ':{port_changed_to}/'; }}, 3500);</script>
+        </body>
+        </html>
+        """
+        
+    return redirect(url_for('index'))
 
-            if new_ssid: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless.ssid', new_ssid])
-            if new_pass and len(new_pass) >= 8: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless-security.key-mgmt', 'wpa-psk', '802-11-wireless-security.psk', new_pass])
+@app.route('/hotspot', methods=['POST'])
+def hotspot_page():
+    """Handles configuring, enabling/disabling, and prioritizing the Wi-Fi Hotspot via form submission."""
+    action = request.form.get('action')
+    force_hs = request.form.get('force_hotspot') == 'on'
+    device = request.form.get('device')
+    
+    with open(hotspot_policy_file, 'w') as f: f.write('true' if force_hs else 'false')
+    set_hotspot_priority(100 if force_hs else 0)
+    
+    hs_info = get_hotspot_config()
+    profile_name = hs_info['name']
+    
+    if action == 'save_and_toggle':
+        new_ssid = request.form.get('ssid')
+        new_pass = request.form.get('password')
+        enable_hs = request.form.get('enable_hotspot') == 'on'
+        
+        check_exists = subprocess.run(['nmcli', '-t', '-f', 'NAME', 'con', 'show', profile_name], capture_output=True, text=True)
+        if profile_name not in check_exists.stdout:
+            if not device: device = 'wlan0'
+            subprocess.run(['sudo', 'nmcli', 'con', 'add', 'type', 'wifi', 'ifname', device, 'con-name', profile_name, 'autoconnect', 'no', 'ssid', new_ssid])
+            subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless.mode', 'ap', '802-11-wireless.band', 'bg', 'ipv4.method', 'shared'])
+        else:
+            if device: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, 'connection.interface-name', device])
+
+        if new_ssid: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless.ssid', new_ssid])
+        if new_pass and len(new_pass) >= 8: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless-security.key-mgmt', 'wpa-psk', '802-11-wireless-security.psk', new_pass])
+        
+        if enable_hs: subprocess.run(['sudo', 'nmcli', 'con', 'up', profile_name])
+        else: subprocess.run(['sudo', 'nmcli', 'con', 'down', profile_name])
             
-            if enable_hs: subprocess.run(['sudo', 'nmcli', 'con', 'up', profile_name])
-            else: subprocess.run(['sudo', 'nmcli', 'con', 'down', profile_name])
-                
-    # Redirect GET requests safely back to the SPA index
     return redirect(url_for('index'))
 
 @app.route('/oled')
