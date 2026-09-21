@@ -10,12 +10,17 @@ let inactivityTimer;
  */
 function resetInactivityTimer() {
     clearTimeout(inactivityTimer);
-    document.getElementById('timeoutOverlay').style.display = 'none';
+    const overlay = document.getElementById('timeoutOverlay');
     
-    // 30 minutes = 30 * 60 * 1000 = 1,800,000 ms
-    inactivityTimer = setTimeout(() => {
-        document.getElementById('timeoutOverlay').style.display = 'flex';
-    }, 1800000); 
+    // Only execute the timer logic if the overlay actually exists (user is logged in)
+    if (overlay) {
+        overlay.style.display = 'none';
+        
+        // 30 minutes = 30 * 60 * 1000 = 1,800,000 ms
+        inactivityTimer = setTimeout(() => {
+            overlay.style.display = 'flex';
+        }, 1800000); 
+    }
 }
 
 /**
