@@ -281,7 +281,9 @@ def set_hotspot_priority(priority):
         if '802-11-wireless' in line:
             name = line.split(':')[0]
             mode_res = subprocess.run(['nmcli', '-g', '802-11-wireless.mode', 'con', 'show', name], capture_output=True, text=True)
-            if mode_res.strip() == 'ap' or (mode_res.returncode == 0 and mode_res.stdout.strip() == 'ap'):
+            
+            # FIXED: Safely checking .stdout before calling .strip()
+            if mode_res.returncode == 0 and mode_res.stdout.strip() == 'ap':
                 subprocess.run(['nmcli', 'con', 'modify', name, 'connection.autoconnect', 'yes', 'connection.autoconnect-priority', str(priority)])
 
 def get_hotspot_config():
@@ -430,9 +432,9 @@ def hotspot_page():
     
     hs_info = get_hotspot_config()
     profile_name = hs_info['name']
+    new_ssid = request.form.get('ssid')
     
     if action == 'save_and_toggle':
-        new_ssid = request.form.get('ssid')
         new_pass = request.form.get('password')
         enable_hs = request.form.get('enable_hotspot') == 'on'
         
@@ -447,10 +449,24 @@ def hotspot_page():
         if new_ssid: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless.ssid', new_ssid])
         if new_pass and len(new_pass) >= 8: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless-security.key-mgmt', 'wpa-psk', '802-11-wireless-security.psk', new_pass])
         
-        if enable_hs: subprocess.run(['sudo', 'nmcli', 'con', 'up', profile_name])
-        else: subprocess.run(['sudo', 'nmcli', 'con', 'down', profile_name])
+        # FIXED: Use Popen with a 1.5 second sleep so Flask can send the webpage 
+        # to the browser BEFORE the radio restarts and drops the connection!
+        if enable_hs: 
+            subprocess.Popen(['/bin/sh', '-c', f'sleep 1.5 && sudo nmcli con up "{profile_name}"'])
+        else: 
+            subprocess.Popen(['/bin/sh', '-c', f'sleep 1.5 && sudo nmcli con down "{profile_name}"'])
             
-    return redirect(url_for('index'))
+    # Return a friendly page instead of a raw redirect so the user knows what is happening
+    return f"""
+    <html>
+    <body style='font-family:sans-serif; text-align:center; margin-top:50px; background:#121212; color:white;'>
+        <h2>Applying Hotspot Settings...</h2>
+        <p>The network adapter is restarting. If you changed the SSID or Password, your device may be disconnected.</p>
+        <p>Please check your Wi-Fi settings and reconnect to <b>{new_ssid}</b>.</p>
+        <script>setTimeout(() => {{ window.location.href = '/'; }}, 5000);</script>
+    </body>
+    </html>
+    """
 
 @app.route('/oled')
 def oled_page():
@@ -585,7 +601,7 @@ def update_run():
 def system_status():
     """
     Returns a full JSON payload of current system variables for the OLED preview.
-    Fetches real-time temperature, hotspot data, and dynamically detected ports.
+    Fetches real-time temperature, hotspot data, network interfaces, and ports.
     """
     now = datetime.datetime.now()
     
@@ -625,7 +641,8 @@ def system_status():
                 iface = parts[1]
                 ip = parts[3].split('/')[0]
                 if iface != "lo" and not iface.startswith("docker") and not iface.startswith("veth"):
-                    networks.append((iface, ip))
+                    # FIXED: Appending as a dictionary so Javascript can read it easily
+                    networks.append({'iface': iface, 'ip': ip})
                     if iface == ap_iface: ap_ip = ip
     except Exception: pass
 
@@ -645,6 +662,7 @@ def system_status():
         'ap_ssid': ap_ssid if hs_active else "",
         'ap_pw': ap_psk if hs_active else "",
         'ap_ip': ap_ip,
+        'networks': networks, # FIXED: Pass the live network list to the UI
         'wifi_ssid': wifi_ssid if wifi_ssid else "Not Connected",
         'wifi_port': wifi_port,
         'diag_port': diag_port,

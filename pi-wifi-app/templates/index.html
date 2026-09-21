@@ -147,7 +147,8 @@
         <!-- ------------------------------------------------------------------- -->
         <div id="section-hotspot" class="nav-section container narrow-container">
             <h2 style="margin-top: 0;">Hotspot Manager</h2>
-            <form action="/hotspot" method="POST">
+            <!-- Added the onsubmit interceptor to handle the Wi-Fi warning -->
+            <form action="/hotspot" method="POST" onsubmit="return handleHotspotSubmit(event)">
                 <input type="hidden" name="action" value="save_and_toggle">
                 
                 <label class="checkbox-label" style="font-weight: bold;">

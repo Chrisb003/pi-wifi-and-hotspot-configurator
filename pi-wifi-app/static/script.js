@@ -201,6 +201,29 @@ function closeModal() {
 let interfacesData = [];
 
 /**
+ * Intercepts the Hotspot form submission to warn the user if they are 
+ * about to enable the Hotspot while actively connected to a Wi-Fi network.
+ */
+function handleHotspotSubmit(event) {
+    const form = event.target;
+    const enableHotspot = form.enable_hotspot.checked;
+    const currentWifi = systemStatus.wifi_ssid;
+
+    // Check if the user is trying to enable the hotspot while connected to an external network
+    if (enableHotspot && currentWifi && currentWifi !== "Not Connected") {
+        const msg = `WARNING: You are currently connected to Wi-Fi (${currentWifi}).\n\nTurning on the Hotspot may disconnect you from this network depending on your hardware.\n\n• Click OK to force-enable the Hotspot.\n• Click Cancel to save your settings without turning the Hotspot on.`;
+        
+        if (!confirm(msg)) {
+            // User chose not to force-enable. Uncheck the box so the backend just saves the settings!
+            form.enable_hotspot.checked = false;
+        }
+    }
+    
+    // Allow the form submission to continue to the backend
+    return true;
+}
+
+/**
  * Fetches available network interfaces from the backend.
  * Populates the dropdown menus for both the WiFi scanner and the Hotspot configurator.
  */
@@ -760,15 +783,37 @@ function renderPreview() {
         warnDiv.style.display = 'none';
     }
 
-    // Render text output
+    // Render text output dynamically
     let lines = [];
     let portSuffix = buildPortSuffix(p);
     
-    if(p.type === 'network_list') {
-        lines = [`wlan0: 192.168.1.10${portSuffix}`, `eth0: 10.0.0.5${portSuffix}`];
-    } else if(p.type === 'hotspot_details') {
-        lines = [`Pi: ${systemStatus.ap_ssid || "My_Hotspot"}`, `PW: ${systemStatus.ap_pw || "Pass123"}`, `IP: ${systemStatus.ap_ip || "10.42.0.1"}${portSuffix}`];
-    } else if(p.type === 'custom') {
+    if (p.type === 'network_list') {
+        // Iterate through the live network array we fetch from Python
+        if (systemStatus.networks && systemStatus.networks.length > 0) {
+            systemStatus.networks.forEach(net => {
+                if (net.ip === systemStatus.ap_ip) {
+                    if (p.show_ap_ip_when_connected !== false) lines.push(`Pi: ${net.ip}${portSuffix}`);
+                } else {
+                    lines.push(`${net.iface}: ${net.ip}${portSuffix}`);
+                }
+            });
+        }
+        // Fallback placeholder just in case the Pi is 100% offline
+        if (lines.length === 0) lines = [`wlan0: 192.168.1.10${portSuffix}`];
+
+    } else if (p.type === 'hotspot_details') {
+        // Show actual live credentials, or a clear "OFF" indicator if the AP is disabled
+        if (systemStatus.hotspot_active) {
+            lines = [
+                `Pi: ${systemStatus.ap_ssid}`, 
+                `PW: ${systemStatus.ap_pw}`, 
+                `IP: ${systemStatus.ap_ip || "10.42.0.1"}${portSuffix}`
+            ];
+        } else {
+            lines = [`Pi: (Hotspot OFF)`, `PW: ---`, `IP: ---${portSuffix}`];
+        }
+
+    } else if (p.type === 'custom') {
         // Fallback port string without leading colon if the user relies purely on {web_port} inline
         let inlinePort = portSuffix.startsWith(':') ? portSuffix.substring(1) : "80"; 
         

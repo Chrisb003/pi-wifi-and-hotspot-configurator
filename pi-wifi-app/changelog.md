@@ -1,4 +1,8 @@
 # Changelog
+## [1.0.1] - initial release
+* Fix for hotspot not saving
+* On saving hotspot it will warn before force enabling if it is connected to wifi.
+* Preview for Oled screen now shows the actual values instead of placeholders
+
 ## [1.0.0] - initial release
-** app code 1.0.0 -
 * Initial release for testing.
