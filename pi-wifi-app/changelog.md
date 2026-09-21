@@ -1,4 +1,7 @@
 # Changelog
+## [1.0.3] - Fix for hotspot
+* Fix for hotspot
+
 ## [1.0.2] - few fixes
 * Fix for hotspot not saving
 * On saving hotspot it will warn before force enabling if it is connected to wifi.

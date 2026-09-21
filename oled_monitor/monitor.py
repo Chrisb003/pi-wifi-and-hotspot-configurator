@@ -405,28 +405,28 @@ def get_hotspot_details():
     """
     ap_ssid, ap_psk, ap_has_clients, ap_iface, wifi_ssid = None, None, False, None, None
     try:
-        active_conns = subprocess.check_output(['nmcli', '-t', '-f', 'NAME,TYPE', 'connection', 'show', '--active'], stderr=subprocess.DEVNULL).decode('utf-8').splitlines()
+        active_conns = subprocess.run(['nmcli', '-t', '-f', 'NAME,TYPE', 'connection', 'show', '--active'], capture_output=True, text=True).stdout.splitlines()
         for conn in active_conns:
-            # FIXED: Robust parsing for 'wifi' type connections
             parts = conn.rsplit(':', 1)
             if len(parts) == 2 and parts[1] in ['802-11-wireless', 'wifi']:
                 name = parts[0]
-                mode = subprocess.check_output(['nmcli', '-g', '802-11-wireless.mode', 'connection', 'show', name], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+                raw = subprocess.run(['sudo', 'nmcli', '--show-secrets', '-t', 'con', 'show', name], capture_output=True, text=True).stdout
+                props = dict(p.split(':', 1) for p in raw.splitlines() if ':' in p)
+                mode = props.get('802-11-wireless.mode') or props.get('wifi.mode') or ''
                 
                 if mode == 'ap':
-                    ap_ssid = subprocess.check_output(['nmcli', '-g', '802-11-wireless.ssid', 'connection', 'show', name], stderr=subprocess.DEVNULL).decode('utf-8').strip()
-                    ap_psk = subprocess.check_output(['sudo', 'nmcli', '--show-secrets', '-g', '802-11-wireless-security.psk', 'connection', 'show', name], stderr=subprocess.DEVNULL).decode('utf-8').strip()
-                    ap_iface = subprocess.check_output(['nmcli', '-g', 'GENERAL.DEVICES', 'connection', 'show', name], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+                    ap_ssid = props.get('802-11-wireless.ssid') or props.get('wifi.ssid') or ''
+                    ap_psk = props.get('802-11-wireless-security.psk') or props.get('wifi-sec.psk') or ''
+                    ap_iface = props.get('GENERAL.DEVICES') or props.get('connection.interface-name') or ''
                     
                     if ap_iface:
                         try:
-                            # Use iw dump to physically count associated stations (clients)
-                            stations = subprocess.check_output(['sudo', 'iw', 'dev', ap_iface, 'station', 'dump'], stderr=subprocess.DEVNULL).decode('utf-8')
+                            stations = subprocess.run(['sudo', 'iw', 'dev', ap_iface, 'station', 'dump'], capture_output=True, text=True).stdout
                             if "Station" in stations: ap_has_clients = True
                         except Exception: pass
                         
                 elif mode == 'infrastructure':
-                    wifi_ssid = subprocess.check_output(['nmcli', '-g', '802-11-wireless.ssid', 'connection', 'show', name], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+                    wifi_ssid = props.get('802-11-wireless.ssid') or props.get('wifi.ssid') or ''
     except Exception: pass
     
     return ap_ssid, ap_psk, ap_has_clients, ap_iface, wifi_ssid
