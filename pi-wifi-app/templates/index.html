@@ -126,7 +126,12 @@
             <!-- Connection Form (Hidden until a scan completes successfully) -->
             <div id="connectForm" class="hidden">
                 <select id="ssidSelect"><option value="">Select a network...</option></select>
-                <input type="password" id="password" placeholder="Password (leave empty if known/open)">
+                
+                <div class="password-wrapper">
+                    <input type="password" id="password" placeholder="Password (leave empty if known/open)">
+                    <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('password', this)">👁️</button>
+                </div>
+                
                 <label class="checkbox-label">
                     <input type="checkbox" id="autoconnect" checked> Auto-connect in the future
                 </label>
@@ -187,8 +192,12 @@
                 </div>
                 <label style="font-size:14px; font-weight:bold;">Username</label>
                 <input type="text" name="username" placeholder="New Username" value="{{ current_user or '' }}">
+                
                 <label style="font-size:14px; font-weight:bold;">Password</label>
-                <input type="password" name="password" placeholder="New Password">
+                <div class="password-wrapper">
+                    <input type="password" id="settingsPasswordInput" name="password" placeholder="New Password">
+                    <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('settingsPasswordInput', this)">👁️</button>
+                </div>
                 
                 <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 20px 0;">
                 
