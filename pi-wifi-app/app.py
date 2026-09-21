@@ -460,9 +460,6 @@ def oled_page():
     """Safely redirects legacy OLED UI requests back to the SPA index."""
     return redirect(url_for('index'))
 
-# ==============================================================================
-# UPDATE API ROUTES
-# ==============================================================================
 @app.route('/api/update/check', methods=['GET'])
 def update_check():
     """
@@ -474,17 +471,21 @@ def update_check():
     target_wifi, target_oled = "Unknown", "Unknown"
     wifi_changelog, oled_changelog = [], []
     
-    # 1. Fetch Version File
+    # 1. Fetch Target Versions from individual version.json files
     try:
-        req = urllib.request.Request(f"{REPO_BASE}/version", headers={'User-Agent': 'Mozilla/5.0'})
+        req = urllib.request.Request(f"{REPO_BASE}/pi-wifi-app/version.json", headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as response:
-            version_text = response.read().decode('utf-8')
-            for line in version_text.splitlines():
-                if line.startswith('WIFI_VERSION='):
-                    target_wifi = line.split('=')[1].strip('\'"')
-                elif line.startswith('OLED_VERSION='):
-                    target_oled = line.split('=')[1].strip('\'"')
-    except Exception as e:
+            target_wifi = json.loads(response.read().decode('utf-8')).get("version", "Unknown")
+    except Exception: pass
+
+    try:
+        req = urllib.request.Request(f"{REPO_BASE}/oled_monitor/version.json", headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            target_oled = json.loads(response.read().decode('utf-8')).get("version", "Unknown")
+    except Exception: pass
+
+    # If both fail, we likely have no internet connection
+    if target_wifi == "Unknown" and target_oled == "Unknown":
         return jsonify({"status": "error", "message": "Unable to connect to GitHub. Please verify your internet connection."})
 
     # 2. Fetch & Parse WiFi Changelog

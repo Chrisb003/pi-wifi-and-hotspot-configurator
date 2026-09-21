@@ -71,18 +71,14 @@ INSTALLED_OLED_VERSION=${INSTALLED_OLED_VERSION:-"unknown"}
 # Attempts to securely download the master 'version' file from the GitHub 
 # repository with a 5-second timeout (-m 5).
 echo ">>> Fetching latest version information from GitHub..."
-VERSION_FILE="/tmp/pi_manager_version_info"
-curl -sSL -m 5 "$REPO_BASE/version" -o "$VERSION_FILE" >/dev/null 2>&1
 
-if [ -f "$VERSION_FILE" ]; then
-    # Extract version strings, stripping out any quotes
-    TARGET_OLED_VERSION=$(grep -i '^OLED_VERSION=' "$VERSION_FILE" | cut -d'=' -f2 | tr -d '"' | tr -d "'")
-    TARGET_WIFI_VERSION=$(grep -i '^WIFI_VERSION=' "$VERSION_FILE" | cut -d'=' -f2 | tr -d '"' | tr -d "'")
-fi
-
-# Fallback to "unknown" if the variables are empty (e.g. file not found or no internet)
-TARGET_OLED_VERSION=${TARGET_OLED_VERSION:-"unknown"}
+# Fetch and parse WiFi version directly from its version.json
+TARGET_WIFI_VERSION=$(curl -sSL -m 5 "$REPO_BASE/pi-wifi-app/version.json" 2>/dev/null | grep '"version"' | cut -d':' -f2 | tr -d ' ",\n\r')
 TARGET_WIFI_VERSION=${TARGET_WIFI_VERSION:-"unknown"}
+
+# Fetch and parse OLED version directly from its version.json
+TARGET_OLED_VERSION=$(curl -sSL -m 5 "$REPO_BASE/oled_monitor/version.json" 2>/dev/null | grep '"version"' | cut -d':' -f2 | tr -d ' ",\n\r')
+TARGET_OLED_VERSION=${TARGET_OLED_VERSION:-"unknown"}
 
 # Cleanup temp file
 rm -f "$VERSION_FILE"
