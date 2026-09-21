@@ -5,6 +5,8 @@ A unified Raspberry Pi management stack for Wi‑Fi, hotspot control, OLED displ
 This is something I created with the help of AI so I could easily configure the wifi, hotspot, oled screen and change the fan behavour for a pi I was using as a dedicated test device for my network testing dashboard. Both parts are seperate and there is the option to install them sperately. 
 The pi hat is a waveshare poe hat with oled screen https://www.waveshare.com/wiki/PoE_HAT_(B) So this is what that part of the code was for.
 
+Internet is required for the first time it runs as it downloads all the code but after that point other than for updating it should be able to function fully offline.
+
 ## Overview
 
 This project is designed for Raspberry Pi systems that need a simple, local-first way to:
