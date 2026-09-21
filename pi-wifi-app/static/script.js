@@ -133,25 +133,34 @@ function buildChangelogHtml(changelogData) {
     if (!changelogData || changelogData.length === 0) return '<p style="font-size:12px; color:var(--info-text);">No recent changelog data.</p>';
     
     let html = '';
-    changelogData.forEach(release => {
+    changelogData.forEach((release, index) => {
+        // If it's the second item (index 1), start the hidden accordion
+        if (index === 1) {
+            html += `<details class="changelog-history"><summary>View Older Versions</summary><div class="changelog-history-content">`;
+        }
+        
         html += `<div class="changelog-release">`;
         html += `<h3 class="changelog-title">[${release.version}] - ${release.title}</h3>`;
         
         release.sections.forEach(sec => {
-            html += `<h4 class="changelog-subtitle">${sec.subtitle}</h4>`;
-            html += `<ul class="changelog-bullets">`;
+            // Only render a subtitle h4 if it actually exists
+            if (sec.subtitle) {
+                html += `<h4 class="changelog-subtitle">${sec.subtitle}</h4>`;
+            }
+            html += `<ul class="changelog-bullets" ${!sec.subtitle ? 'style="margin-top:10px;"' : ''}>`;
             
             sec.bullets.forEach(b => {
-                if (b.type === 'space') {
-                    html += `<div class="changelog-space"></div>`;
-                } else {
-                    html += `<li>${b.content}</li>`;
-                }
+                if (b.type === 'space') html += `<div class="changelog-space"></div>`;
+                else html += `<li>${b.content}</li>`;
             });
-            
             html += `</ul>`;
         });
         html += `</div>`;
+        
+        // If it's the very last item, close the accordion
+        if (index === changelogData.length - 1 && index > 0) {
+            html += `</div></details>`;
+        }
     });
     return html;
 }
@@ -577,21 +586,24 @@ function renderPages() {
             `;
         }
 
-        // Port appending toggles
+        // Re-aligned Port Toggles & Renamed Labels
         const portUI = `
-            <div class="flex-row" style="margin-top: 10px;">
-                <div>
-                    <label class="checkbox-label" style="font-size:12px;">
-                        <input type="checkbox" id="page_diagport_${index}" ${page.show_diagnostic_port !== false ? 'checked' : ''}> Add Diag Port
-                    </label>
-                </div>
-                <div>
-                    <label class="checkbox-label" style="font-size:12px;">
-                        <input type="checkbox" id="page_wifiport_${index}" ${page.show_wifi_port !== false ? 'checked' : ''}> Add WiFi Port
-                    </label>
-                </div>
-                <div>
-                    <input type="text" id="page_customport_${index}" placeholder="Custom Port (e.g. 9000)" value="${page.custom_port || ''}" style="padding: 6px; margin-bottom: 0; font-size:12px;">
+            <div style="margin-top: 15px; border-top: 1px dashed var(--input-border); padding-top: 15px;">
+                <label style="font-size:13px; color:var(--text-color); margin-bottom:10px;">Port Display Options</label>
+                <div class="flex-row" style="align-items: center; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 180px;">
+                        <label class="checkbox-label" style="font-size:12px; margin-bottom: 5px;">
+                            <input type="checkbox" id="page_diagport_${index}" ${page.show_diagnostic_port !== false ? 'checked' : ''}> Network Diagnostic Tool
+                        </label>
+                    </div>
+                    <div style="flex: 1; min-width: 120px;">
+                        <label class="checkbox-label" style="font-size:12px; margin-bottom: 5px;">
+                            <input type="checkbox" id="page_wifiport_${index}" ${page.show_wifi_port !== false ? 'checked' : ''}> WiFi Config
+                        </label>
+                    </div>
+                    <div style="flex: 1; min-width: 150px;">
+                        <input type="text" id="page_customport_${index}" placeholder="Custom Port (e.g. 9000)" value="${page.custom_port || ''}" style="padding: 6px; margin-bottom: 5px; font-size:12px; width: 100%;">
+                    </div>
                 </div>
             </div>
         `;
@@ -627,6 +639,21 @@ function renderPages() {
                     </select>
                 </div>
             </div>
+            
+            <!-- NEW: Scroll Toggles -->
+            <div class="flex-row" style="margin-top: 10px; margin-bottom: 10px;">
+                <div>
+                    <label class="checkbox-label" style="font-size:12px; margin-bottom:0;">
+                        <input type="checkbox" id="page_scrollv_${index}" ${page.scroll_vertical !== false ? 'checked' : ''}> Scroll Vertically
+                    </label>
+                </div>
+                <div>
+                    <label class="checkbox-label" style="font-size:12px; margin-bottom:0;">
+                        <input type="checkbox" id="page_scrollh_${index}" ${page.scroll_horizontal !== false ? 'checked' : ''}> Scroll Horizontally
+                    </label>
+                </div>
+            </div>
+
             ${specifics}
             ${portUI}
         `;
@@ -651,7 +678,8 @@ function updatePageType(index, newType) {
 function addPage() {
     syncStateFromUI();
     if(!oledSettings.pages) oledSettings.pages = [];
-    oledSettings.pages.push({ type: 'custom', duration: 20, align: 'left', lines: ['New Custom Page'] });
+    // Added scroll true defaults
+    oledSettings.pages.push({ type: 'custom', duration: 20, align: 'left', scroll_vertical: true, scroll_horizontal: true, lines: ['New Custom Page'] });
     renderPages();
 }
 
@@ -697,6 +725,10 @@ function syncStateFromUI() {
         page.type = typeSel.value;
         page.duration = parseInt(document.getElementById(`page_dur_${i}`).value);
         page.align = document.getElementById(`page_align_${i}`).value;
+        
+        // Scrape scroll toggles
+        page.scroll_vertical = document.getElementById(`page_scrollv_${i}`).checked;
+        page.scroll_horizontal = document.getElementById(`page_scrollh_${i}`).checked;
         
         page.show_diagnostic_port = document.getElementById(`page_diagport_${i}`).checked;
         page.show_wifi_port = document.getElementById(`page_wifiport_${i}`).checked;

@@ -167,8 +167,7 @@ def get_local_versions():
 def parse_changelog(raw_markdown):
     """
     Parses the custom changelog Markdown format into a structured Python dictionary.
-    Handles Release Titles (##), Subtitles (**), and Bullet points (*).
-    Empty bullet points ('* ') are converted to line space elements.
+    Safely handles releases that have bullet points but no subtitles.
     """
     releases = []
     current_release = None
@@ -178,7 +177,7 @@ def parse_changelog(raw_markdown):
         line = line.strip()
         if not line: continue
         
-        # Parse Release Header: "## [1.0.20] - webport file"
+        # Parse Release Header
         if line.startswith('## '):
             match = re.match(r'##\s*\[(.*?)\]\s*-\s*(.*)', line)
             version = match.group(1) if match else "Unknown"
@@ -187,16 +186,21 @@ def parse_changelog(raw_markdown):
             releases.append(current_release)
             current_section = None
             
-        # Parse Subtitle Header: "** Main App Script 1.0.15 -"
+        # Parse Subtitle Header
         elif line.startswith('** '):
             if current_release is not None:
                 subtitle = line.replace('** ', '').strip()
                 current_section = {"subtitle": subtitle, "bullets": []}
                 current_release["sections"].append(current_section)
                 
-        # Parse Bullet Points or Spaces: "* bullet text" or "* "
+        # Parse Bullet Points
         elif line.startswith('*'):
-            if current_section is not None:
+            if current_release is not None:
+                # If there are bullets but no subtitle, create a blank general section
+                if current_section is None:
+                    current_section = {"subtitle": "", "bullets": []}
+                    current_release["sections"].append(current_section)
+                    
                 bullet_content = line[1:].strip()
                 if bullet_content == "":
                     current_section["bullets"].append({"type": "space"})
@@ -244,7 +248,8 @@ def get_interfaces_info():
         interfaces = []
         default_iface = None
         for line in res.stdout.splitlines():
-            if ':wifi:' in line:
+            # FIXED: Handle both old and new nmcli interface type labels
+            if ':wifi:' in line or ':802-11-wireless:' in line:
                 parts = line.split(':')
                 dev, state = parts[0], parts[2]
                 conn = parts[3] if len(parts) > 3 else ''
@@ -278,11 +283,11 @@ def set_hotspot_priority(priority):
     """Modifies NetworkManager profiles to apply the chosen hotspot autoconnect priority."""
     res = subprocess.run(['nmcli', '-t', '-f', 'NAME,TYPE', 'con', 'show'], capture_output=True, text=True)
     for line in res.stdout.splitlines():
-        if '802-11-wireless' in line:
-            name = line.split(':')[0]
+        # FIXED: Split from the right to handle networks that have colons in their SSID
+        parts = line.rsplit(':', 1)
+        if len(parts) == 2 and parts[1] in ['802-11-wireless', 'wifi']:
+            name = parts[0]
             mode_res = subprocess.run(['nmcli', '-g', '802-11-wireless.mode', 'con', 'show', name], capture_output=True, text=True)
-            
-            # FIXED: Safely checking .stdout before calling .strip()
             if mode_res.returncode == 0 and mode_res.stdout.strip() == 'ap':
                 subprocess.run(['nmcli', 'con', 'modify', name, 'connection.autoconnect', 'yes', 'connection.autoconnect-priority', str(priority)])
 
@@ -292,8 +297,10 @@ def get_hotspot_config():
     try:
         res = subprocess.run(['nmcli', '-t', '-f', 'NAME,TYPE', 'con', 'show'], capture_output=True, text=True)
         for line in res.stdout.splitlines():
-            if '802-11-wireless' in line:
-                name = line.split(':')[0]
+            # FIXED: Robust parsing for 'wifi' and '802-11-wireless' modes
+            parts = line.rsplit(':', 1)
+            if len(parts) == 2 and parts[1] in ['802-11-wireless', 'wifi']:
+                name = parts[0]
                 mode_res = subprocess.run(['nmcli', '-g', '802-11-wireless.mode', 'con', 'show', name], capture_output=True, text=True)
                 if mode_res.stdout.strip() == 'ap':
                     hs_name = name
@@ -303,7 +310,10 @@ def get_hotspot_config():
                     iface_res = subprocess.run(['nmcli', '-g', 'connection.interface-name', 'con', 'show', name], capture_output=True, text=True)
                     hs_iface = iface_res.stdout.strip()
                     active_res = subprocess.run(['nmcli', '-t', '-f', 'NAME', 'con', 'show', '--active'], capture_output=True, text=True)
-                    if hs_name in active_res.stdout: hs_active = True
+                    for active_line in active_res.stdout.splitlines():
+                        if active_line == name:
+                            hs_active = True
+                            break
                     break
     except Exception: pass
     return {'name': hs_name, 'ssid': hs_ssid, 'password': hs_psk, 'active': hs_active, 'iface': hs_iface}
@@ -617,10 +627,12 @@ def system_status():
     ap_iface = None
     wifi_ssid = ""
     try:
-        active_conns = subprocess.check_output(['nmcli', '-t', '-f', 'NAME,TYPE', 'connection', 'show', '--active'], stderr=subprocess.DEVNULL).decode('utf-8').split('\n')
+        active_conns = subprocess.check_output(['nmcli', '-t', '-f', 'NAME,TYPE', 'connection', 'show', '--active'], stderr=subprocess.DEVNULL).decode('utf-8').splitlines()
         for conn in active_conns:
-            if 'wireless' in conn or '802-11-wireless' in conn:
-                name = conn.split(':')[0]
+            # FIXED: Proper connection type parsing for the live system stats
+            parts = conn.rsplit(':', 1)
+            if len(parts) == 2 and parts[1] in ['802-11-wireless', 'wifi']:
+                name = parts[0]
                 mode = subprocess.check_output(['nmcli', '-g', '802-11-wireless.mode', 'connection', 'show', name], stderr=subprocess.DEVNULL).decode('utf-8').strip()
                 if mode == 'ap':
                     hs_active = True

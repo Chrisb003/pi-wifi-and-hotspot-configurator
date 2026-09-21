@@ -397,7 +397,6 @@ def get_networks():
     except Exception: pass
     return networks
 
-
 def get_hotspot_details():
     """
     Interrogates NetworkManager to see if an Access Point (Hotspot) is currently active.
@@ -406,10 +405,12 @@ def get_hotspot_details():
     """
     ap_ssid, ap_psk, ap_has_clients, ap_iface, wifi_ssid = None, None, False, None, None
     try:
-        active_conns = subprocess.check_output(['nmcli', '-t', '-f', 'NAME,TYPE', 'connection', 'show', '--active'], stderr=subprocess.DEVNULL).decode('utf-8').split('\n')
+        active_conns = subprocess.check_output(['nmcli', '-t', '-f', 'NAME,TYPE', 'connection', 'show', '--active'], stderr=subprocess.DEVNULL).decode('utf-8').splitlines()
         for conn in active_conns:
-            if 'wireless' in conn or '802-11-wireless' in conn:
-                name = conn.split(':')[0]
+            # FIXED: Robust parsing for 'wifi' type connections
+            parts = conn.rsplit(':', 1)
+            if len(parts) == 2 and parts[1] in ['802-11-wireless', 'wifi']:
+                name = parts[0]
                 mode = subprocess.check_output(['nmcli', '-g', '802-11-wireless.mode', 'connection', 'show', name], stderr=subprocess.DEVNULL).decode('utf-8').strip()
                 
                 if mode == 'ap':
@@ -429,7 +430,6 @@ def get_hotspot_details():
     except Exception: pass
     
     return ap_ssid, ap_psk, ap_has_clients, ap_iface, wifi_ssid
-
 
 def get_temp():
     """

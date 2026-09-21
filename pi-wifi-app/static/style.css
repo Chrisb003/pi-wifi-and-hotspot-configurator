@@ -232,3 +232,11 @@ body.light-mode .preview-warning { background-color: #fff3cd; color: #856404; bo
 .password-toggle-btn:hover {
     opacity: 1;
 }
+
+/* ==========================================================================
+   CHANGELOG ACCORDION STYLES
+   ========================================================================== */
+.changelog-history { margin-top: 20px; border-top: 1px dashed var(--input-border); padding-top: 15px; }
+.changelog-history summary { cursor: pointer; font-size: 14px; font-weight: bold; color: var(--link-color); outline: none; margin-bottom: 10px; }
+.changelog-history summary:hover { text-decoration: underline; }
+.changelog-history-content { padding-top: 10px; }

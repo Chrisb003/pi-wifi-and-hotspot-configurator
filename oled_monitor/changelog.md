@@ -1,4 +1,8 @@
 # Changelog
+## [1.0.1] - initial release
+** monitor code -
+* fix for hotspot
+
 ## [1.0.0] - initial release
-** monitor code 1.0.0 -
+** monitor code -
 * Initial release for testing.
