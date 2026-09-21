@@ -147,23 +147,20 @@
         <!-- ------------------------------------------------------------------- -->
         <div id="section-hotspot" class="nav-section container narrow-container">
             <h2 style="margin-top: 0;">Hotspot Manager</h2>
-            <!-- Added the onsubmit interceptor to handle the Wi-Fi warning -->
-            <form action="/hotspot" method="POST" onsubmit="return handleHotspotSubmit(event)">
+            <!-- Removed the action/method so JS fetch can handle it seamlessly -->
+            <form onsubmit="handleHotspotSubmit(event)">
                 <input type="hidden" name="action" value="save_and_toggle">
                 
                 <label class="checkbox-label" style="font-weight: bold;">
-                    <!-- Pre-checks the box if the backend detects the AP is currently active -->
                     <input type="checkbox" name="enable_hotspot" {% if hotspot and hotspot.active %}checked{% endif %}>
                     Enable Access Point (Hotspot)
                 </label>
                 <label class="checkbox-label" style="font-weight: bold;">
-                    <!-- Pre-checks if NetworkManager priorities are forced high -->
                     <input type="checkbox" name="force_hotspot" {% if force_hotspot %}checked{% endif %}>
                     Force Hotspot to start on boot (High Priority)
                 </label>
                 <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 20px 0;">
                 
-                <!-- Target Interface Selector -->
                 <label id="ifaceLabel" style="font-size:14px; font-weight:bold;">Bind to Interface</label>
                 <select name="device" id="hotspotInterfaceSelect"></select>
                 
@@ -178,6 +175,8 @@
                 
                 <button type="submit" class="btn primary-btn">Save & Apply Hotspot</button>
             </form>
+            <!-- NEW: Message box for background saving status -->
+            <div id="hotspotMsg" class="hidden" style="margin-top: 15px;"></div>
         </div>
 
         <!-- ------------------------------------------------------------------- -->

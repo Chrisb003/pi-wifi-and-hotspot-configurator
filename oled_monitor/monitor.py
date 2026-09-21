@@ -503,8 +503,11 @@ if ENABLE_FAN:
 last_hw_fetch, last_net_fetch = 0, 0
 networks = []
 ap_ssid, ap_psk, ap_has_clients, ap_iface, wifi_ssid = None, None, False, None, None
-diag_port, wifi_port = "", ""
 temp, uv = 0.0, False
+
+# Read ports into RAM ONCE at startup to prevent SD Card wear
+diag_port = get_file_port('/home/*/Network-Testing-Tools/webport')
+wifi_port = get_file_port('/home/*/pi-wifi-app/webport')
 
 current_page_idx = 0
 page_start_time = time.time()
@@ -588,10 +591,6 @@ try:
             if current_time - last_net_fetch > net_interval:
                 networks = get_networks()
                 ap_ssid, ap_psk, ap_has_clients, ap_iface, wifi_ssid = get_hotspot_details()
-                
-                # Retrieve the active ports for the diagnostic and wifi dashboards
-                diag_port = get_file_port('/home/*/Network-Testing-Tools/webport')
-                wifi_port = get_file_port('/home/*/pi-wifi-app/webport')
                 
                 last_net_fetch = current_time
 

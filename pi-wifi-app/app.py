@@ -210,6 +210,14 @@ def parse_changelog(raw_markdown):
     return releases
 
 # ==============================================================================
+# RAM CACHE (Minimizes SD Card I/O)
+# ==============================================================================
+RAM_CACHE = {
+    'auth_enabled': None,
+    'current_port': None
+}
+
+# ==============================================================================
 # HELPER FUNCTIONS
 # ==============================================================================
 def get_credentials():
@@ -221,23 +229,34 @@ def get_credentials():
     return None, None
 
 def get_file_port(glob_pattern, default=""):
-    """Searches the system to locate specific 'webport' configuration files."""
+    """Searches the system to locate 'webport' files and caches the result in RAM."""
+    cache_key = f"port_{glob_pattern}"
+    if RAM_CACHE.get(cache_key) is not None: 
+        return RAM_CACHE[cache_key]
+        
     try:
         files = glob.glob(glob_pattern)
         if files:
             with open(files[0], 'r') as f:
                 val = f.read().strip()
-                if val: return val
+                if val: 
+                    RAM_CACHE[cache_key] = val
+                    return val
     except Exception: pass
     return default
 
 def get_current_port():
-    """Reads the active webport file for this specific Wi-Fi app."""
+    """Reads the active webport file for this specific app and caches it in RAM."""
+    if RAM_CACHE['current_port'] is not None: 
+        return RAM_CACHE['current_port']
+        
     try:
         if os.path.exists(port_file_path):
             with open(port_file_path, 'r') as f:
                 p = f.read().strip()
-                if p.isdigit(): return int(p)
+                if p.isdigit(): 
+                    RAM_CACHE['current_port'] = int(p)
+                    return RAM_CACHE['current_port']
     except: pass
     return 8080
 
@@ -318,7 +337,10 @@ def get_hotspot_config():
 @app.before_request
 def check_auth():
     """Security Middleware: Blocks access to routes without a valid session."""
-    if os.path.exists(user_file):
+    if RAM_CACHE.get('auth_enabled') is None:
+        RAM_CACHE['auth_enabled'] = os.path.exists(user_file)
+        
+    if RAM_CACHE['auth_enabled']:
         if request.endpoint not in ['login', 'static'] and not session.get('logged_in'):
             return redirect(url_for('login'))
 
@@ -397,6 +419,8 @@ def settings():
     if new_user and new_pw:
         hashed = generate_password_hash(new_pw)
         with open(user_file, 'w') as f: f.write(f"{new_user}:{hashed}")
+        
+        RAM_CACHE['auth_enabled'] = True # Update RAM immediately
         session.permanent = True
         session['logged_in'] = True
         
@@ -455,24 +479,15 @@ def hotspot_page():
             # Updated to match Linux-Installer.sh syntax exactly
             subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, 'wifi-sec.key-mgmt', 'wpa-psk', 'wifi-sec.psk', new_pass])
         
-        # FIXED: Use Popen with a 1.5 second sleep so Flask can send the webpage 
-        # to the browser BEFORE the radio restarts and drops the connection!
+        # Use Popen with a 1.5 second sleep so Flask can instantly return the JSON 
+        # success message to Javascript BEFORE the radio restarts and drops the connection!
         if enable_hs: 
             subprocess.Popen(['/bin/sh', '-c', f'sleep 1.5 && sudo nmcli con up "{profile_name}"'])
         else: 
             subprocess.Popen(['/bin/sh', '-c', f'sleep 1.5 && sudo nmcli con down "{profile_name}"'])
-            
-    # Return a friendly page instead of a raw redirect so the user knows what is happening
-    return f"""
-    <html>
-    <body style='font-family:sans-serif; text-align:center; margin-top:50px; background:#121212; color:white;'>
-        <h2>Applying Hotspot Settings...</h2>
-        <p>The network adapter is restarting. If you changed the SSID or Password, your device may be disconnected.</p>
-        <p>Please check your Wi-Fi settings and reconnect to <b>{new_ssid}</b>.</p>
-        <script>setTimeout(() => {{ window.location.href = '/'; }}, 5000);</script>
-    </body>
-    </html>
-    """
+                    
+    # Return a clean JSON response instead of a separate HTML page redirect
+    return jsonify({"status": "success", "message": "Hotspot settings saved. Adapter is restarting momentarily."})
 
 @app.route('/oled')
 def oled_page():
@@ -636,7 +651,7 @@ def system_status():
                 elif mode == 'infrastructure':
                     wifi_ssid = subprocess.run(['nmcli', '-g', '802-11-wireless.ssid', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
     except Exception: pass
-    
+
     networks = []
     ap_ip = "10.42.0.1"
     try:

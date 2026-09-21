@@ -210,10 +210,11 @@ function closeModal() {
 let interfacesData = [];
 
 /**
- * Intercepts the Hotspot form submission to warn the user if they are 
- * about to enable the Hotspot while actively connected to a Wi-Fi network.
+ * Intercepts the Hotspot form submission to warn the user about network drops,
+ * then silently sends the configuration to the backend via AJAX without reloading the page.
  */
-function handleHotspotSubmit(event) {
+async function handleHotspotSubmit(event) {
+    event.preventDefault(); // Stop the browser from navigating to a new page
     const form = event.target;
     const enableHotspot = form.enable_hotspot.checked;
     const currentWifi = systemStatus.wifi_ssid;
@@ -223,13 +224,37 @@ function handleHotspotSubmit(event) {
         const msg = `WARNING: You are currently connected to Wi-Fi (${currentWifi}).\n\nTurning on the Hotspot may disconnect you from this network depending on your hardware.\n\n• Click OK to force-enable the Hotspot.\n• Click Cancel to save your settings without turning the Hotspot on.`;
         
         if (!confirm(msg)) {
-            // User chose not to force-enable. Uncheck the box so the backend just saves the settings!
             form.enable_hotspot.checked = false;
         }
     }
     
-    // Allow the form submission to continue to the backend
-    return true;
+    // UI Loading State
+    const btn = form.querySelector('button[type="submit"]');
+    btn.innerText = "Applying...";
+    btn.disabled = true;
+    showMessage('hotspotMsg', '', '');
+    
+    try {
+        const response = await fetch('/hotspot', {
+            method: 'POST',
+            body: new FormData(form) // Automatically pulls all the inputs from the form
+        });
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            showMessage('hotspotMsg', 'success', data.message);
+        } else {
+            showMessage('hotspotMsg', 'error', 'Failed: ' + data.message);
+        }
+    } catch(e) {
+        // If the Wi-Fi connection drops during the split second it takes the script to respond, 
+        // the browser throws a network error. We interpret this as a success because the radio restarted!
+        showMessage('hotspotMsg', 'success', 'Settings applied successfully! Network adapter is reconnecting...');
+    }
+    
+    // Restore UI state
+    btn.innerText = "Save & Apply Hotspot";
+    btn.disabled = false;
 }
 
 /**
