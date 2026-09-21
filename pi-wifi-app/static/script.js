@@ -863,7 +863,8 @@ function togglePasswordVisibility(inputId, btn) {
  */
 window.onload = () => {
     // Sync the dark/light mode toggle text immediately upon loading
-    document.getElementById('themeToggle').innerText = document.body.classList.contains('light-mode') ? '🌙 Dark' : '☀️ Light';
+    const themeBtn = document.getElementById('themeToggle');
+    if (themeBtn) themeBtn.innerText = document.body.classList.contains('light-mode') ? '🌙 Dark' : '☀️ Light';
     
     // Set up inactivity timers to monitor user engagement across the document
     document.addEventListener('mousemove', resetInactivityTimer);
@@ -871,14 +872,13 @@ window.onload = () => {
     document.addEventListener('click', resetInactivityTimer);
     resetInactivityTimer();
     
-    // Determine the last open SPA tab, defaulting to the WiFi scanner if none found
-    let active = localStorage.getItem('activeSection') || 'wifi';
-    
-    // Prevent the user from navigating to a cached OLED tab if they uninstalled the component
-    if(active === 'oled' && !window.OLED_INSTALLED) active = 'wifi';
-    showSection(active);
-    
-    // Initialize components via async fetching
-    loadInterfaces();
-    initOLEDForm();
+    // Check if the user is fully logged in by looking for an SPA navigation wrapper
+    if (document.getElementById('section-wifi')) {
+        let active = localStorage.getItem('activeSection') || 'wifi';
+        if(active === 'oled' && !window.OLED_INSTALLED) active = 'wifi';
+        showSection(active);
+        
+        loadInterfaces();
+        initOLEDForm();
+    }
 };

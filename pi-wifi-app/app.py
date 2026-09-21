@@ -32,7 +32,6 @@ CORE_FILES = [
     'app.py',
     'version.json',
     'templates/index.html',
-    'templates/login.html',
     'static/style.css',
     'static/script.js'
 ]
@@ -41,7 +40,8 @@ CORE_FILES = [
 OBSOLETE_FILES = [
     'templates/settings.html',
     'templates/hotspot.html',
-    'templates/oled.html'
+    'templates/oled.html',
+    'templates/login.html' # Now obsolete!
 ]
 
 def download_file(url, dest_path):
@@ -333,7 +333,14 @@ def inject_global_vars():
 # ==============================================================================
 @app.route('/')
 def index():
-    """Renders the combined SPA dashboard, passing all necessary config data."""
+    """Renders the single page application. Serves the login screen if authentication is required."""
+    needs_login = os.path.exists(user_file) and not session.get('logged_in')
+    
+    # If the user needs to log in, render the page immediately to hide backend data
+    if needs_login:
+        return render_template('index.html', needs_login=True, login_error=session.pop('login_error', None))
+
+    # User is fully authenticated, fetch the system data securely
     hs_config = get_hotspot_config()
     hs_policy = get_hotspot_policy()
     
@@ -346,28 +353,29 @@ def index():
                 with open(settings_file, 'r') as f:
                     content = f.read()
                     content = re.sub(r'^\s*//.*$', '', content, flags=re.MULTILINE)
-                    loaded = json.loads(content)
-                    current_data = json.dumps(loaded)
+                    current_data = json.dumps(json.loads(content))
             except Exception: pass
             
     return render_template('index.html', 
+                           needs_login=False,
                            hotspot=hs_config, 
                            force_hotspot=hs_policy,
                            current_settings=current_data)
 
-@app.route('/login', methods=['GET', 'POST'])
+@app.route('/login', methods=['POST'])
 def login():
-    """Handles user authentication. Validates credentials and sets the session cookie."""
-    if request.method == 'POST':
-        user = request.form.get('username')
-        pw = request.form.get('password')
-        saved_user, saved_hash = get_credentials()
-        if saved_user == user and saved_hash and check_password_hash(saved_hash, pw):
-            session.permanent = True
-            session['logged_in'] = True
-            return redirect(url_for('index'))
-        return render_template('login.html', error="Invalid credentials")
-    return render_template('login.html')
+    """Handles the actual form submission from the index page's login form."""
+    user = request.form.get('username')
+    pw = request.form.get('password')
+    saved_user, saved_hash = get_credentials()
+    
+    if saved_user == user and saved_hash and check_password_hash(saved_hash, pw):
+        session.permanent = True
+        session['logged_in'] = True
+    else:
+        session['login_error'] = "Invalid credentials"
+        
+    return redirect(url_for('index'))
 
 @app.route('/logout')
 def logout():
