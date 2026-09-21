@@ -1,4 +1,7 @@
 # Changelog
+## [1.0.3] - Fix for hotspot
+* Fix for hotspot. Hopefully final.
+
 ## [1.0.2] - fix for hotspot
 ** monitor code -
 * fix for hotspot

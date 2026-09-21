@@ -410,14 +410,13 @@ def get_hotspot_details():
             parts = conn.rsplit(':', 1)
             if len(parts) == 2 and parts[1] in ['802-11-wireless', 'wifi']:
                 name = parts[0]
-                raw = subprocess.run(['sudo', 'nmcli', '--show-secrets', '-t', 'con', 'show', name], capture_output=True, text=True).stdout
-                props = dict(p.split(':', 1) for p in raw.splitlines() if ':' in p)
-                mode = props.get('802-11-wireless.mode') or props.get('wifi.mode') or ''
-                
+                mode = subprocess.run(['nmcli', '-g', '802-11-wireless.mode', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
                 if mode == 'ap':
-                    ap_ssid = props.get('802-11-wireless.ssid') or props.get('wifi.ssid') or ''
-                    ap_psk = props.get('802-11-wireless-security.psk') or props.get('wifi-sec.psk') or ''
-                    ap_iface = props.get('GENERAL.DEVICES') or props.get('connection.interface-name') or ''
+                    ap_ssid = subprocess.run(['nmcli', '-g', '802-11-wireless.ssid', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                    ap_psk = subprocess.run(['sudo', 'nmcli', '-s', '-g', 'wifi-sec.psk', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                    if not ap_psk:
+                        ap_psk = subprocess.run(['sudo', 'nmcli', '-s', '-g', '802-11-wireless-security.psk', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                    ap_iface = subprocess.run(['nmcli', '-g', 'GENERAL.DEVICES', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
                     
                     if ap_iface:
                         try:
@@ -426,7 +425,7 @@ def get_hotspot_details():
                         except Exception: pass
                         
                 elif mode == 'infrastructure':
-                    wifi_ssid = props.get('802-11-wireless.ssid') or props.get('wifi.ssid') or ''
+                    wifi_ssid = subprocess.run(['nmcli', '-g', '802-11-wireless.ssid', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
     except Exception: pass
     
     return ap_ssid, ap_psk, ap_has_clients, ap_iface, wifi_ssid

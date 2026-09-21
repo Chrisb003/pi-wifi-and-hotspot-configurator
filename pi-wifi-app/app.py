@@ -248,16 +248,13 @@ def get_interfaces_info():
         interfaces = []
         default_iface = None
         for line in res.stdout.splitlines():
-            if ':wifi:' in line or ':802-11-wireless:' in line:
-                parts = line.split(':')
-                dev, state = parts[0], parts[2]
-                conn = parts[3] if len(parts) > 3 else ''
+            parts = line.split(':')
+            # Look for both legacy '802-11-wireless' and modern 'wifi' types
+            if len(parts) >= 4 and parts[1] in ['802-11-wireless', 'wifi']:
+                dev, state, conn = parts[0], parts[2], parts[3]
                 is_hotspot = False
                 if state == 'connected' and conn:
-                    # Parse all properties into a dictionary to bypass nmcli aliasing issues
-                    raw = subprocess.run(['nmcli', '-t', 'con', 'show', conn], capture_output=True, text=True).stdout
-                    props = dict(p.split(':', 1) for p in raw.splitlines() if ':' in p)
-                    mode = props.get('802-11-wireless.mode') or props.get('wifi.mode') or ''
+                    mode = subprocess.run(['nmcli', '-g', '802-11-wireless.mode', 'con', 'show', conn], capture_output=True, text=True).stdout.strip()
                     if mode == 'ap': is_hotspot = True
                 interfaces.append({'name': dev, 'is_hotspot': is_hotspot})
         
@@ -271,7 +268,6 @@ def get_interfaces_info():
     except Exception: return {'interfaces': [], 'default': ''}
 
 def get_hotspot_policy():
-    """Reads the user's saved policy on whether the Hotspot should automatically persist on boot."""
     if os.path.exists(hotspot_policy_file):
         with open(hotspot_policy_file, 'r') as f: return f.read().strip() == 'true'
     info = get_interfaces_info()
@@ -282,21 +278,16 @@ def get_hotspot_policy():
     return False
 
 def set_hotspot_priority(priority):
-    """Modifies NetworkManager profiles to apply the chosen hotspot autoconnect priority."""
     res = subprocess.run(['nmcli', '-t', '-f', 'NAME,TYPE', 'con', 'show'], capture_output=True, text=True)
     for line in res.stdout.splitlines():
         parts = line.rsplit(':', 1)
         if len(parts) == 2 and parts[1] in ['802-11-wireless', 'wifi']:
             name = parts[0]
-            raw = subprocess.run(['nmcli', '-t', 'con', 'show', name], capture_output=True, text=True).stdout
-            props = dict(p.split(':', 1) for p in raw.splitlines() if ':' in p)
-            mode = props.get('802-11-wireless.mode') or props.get('wifi.mode') or ''
-            
+            mode = subprocess.run(['nmcli', '-g', '802-11-wireless.mode', 'con', 'show', name], capture_output=True, text=True).stdout.strip()
             if mode == 'ap':
                 subprocess.run(['nmcli', 'con', 'modify', name, 'connection.autoconnect', 'yes', 'connection.autoconnect-priority', str(priority)])
 
 def get_hotspot_config():
-    """Detects existing NetworkManager Hotspot profiles via dictionary parsing to ensure bulletproof UI population."""
     hs_name, hs_ssid, hs_psk, hs_active, hs_iface = "Hotspot", "", "", False, ""
     try:
         res = subprocess.run(['nmcli', '-t', '-f', 'NAME,TYPE', 'con', 'show'], capture_output=True, text=True)
@@ -304,16 +295,17 @@ def get_hotspot_config():
             parts = line.rsplit(':', 1)
             if len(parts) == 2 and parts[1] in ['802-11-wireless', 'wifi']:
                 name = parts[0]
-                raw = subprocess.run(['sudo', 'nmcli', '--show-secrets', '-t', 'con', 'show', name], capture_output=True, text=True).stdout
-                props = dict(p.split(':', 1) for p in raw.splitlines() if ':' in p)
-                mode = props.get('802-11-wireless.mode') or props.get('wifi.mode') or ''
-                
+                mode = subprocess.run(['nmcli', '-g', '802-11-wireless.mode', 'con', 'show', name], capture_output=True, text=True).stdout.strip()
                 if mode == 'ap':
                     hs_name = name
-                    hs_ssid = props.get('802-11-wireless.ssid') or props.get('wifi.ssid') or ''
-                    hs_psk = props.get('802-11-wireless-security.psk') or props.get('wifi-sec.psk') or ''
-                    hs_iface = props.get('connection.interface-name') or props.get('GENERAL.DEVICES') or ''
+                    hs_ssid = subprocess.run(['nmcli', '-g', '802-11-wireless.ssid', 'con', 'show', name], capture_output=True, text=True).stdout.strip()
                     
+                    # Mirroring Linux-Installer.sh by pulling 'wifi-sec.psk'
+                    hs_psk = subprocess.run(['sudo', 'nmcli', '-s', '-g', 'wifi-sec.psk', 'con', 'show', name], capture_output=True, text=True).stdout.strip()
+                    if not hs_psk: 
+                        hs_psk = subprocess.run(['sudo', 'nmcli', '-s', '-g', '802-11-wireless-security.psk', 'con', 'show', name], capture_output=True, text=True).stdout.strip()
+                    
+                    hs_iface = subprocess.run(['nmcli', '-g', 'connection.interface-name', 'con', 'show', name], capture_output=True, text=True).stdout.strip()
                     active_res = subprocess.run(['nmcli', '-t', '-f', 'NAME', 'con', 'show', '--active'], capture_output=True, text=True)
                     hs_active = any(n == name for n in active_res.stdout.splitlines())
                     break
@@ -459,7 +451,9 @@ def hotspot_page():
             if device: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, 'connection.interface-name', device])
 
         if new_ssid: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless.ssid', new_ssid])
-        if new_pass and len(new_pass) >= 8: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless-security.key-mgmt', 'wpa-psk', '802-11-wireless-security.psk', new_pass])
+        if new_pass and len(new_pass) >= 8: 
+            # Updated to match Linux-Installer.sh syntax exactly
+            subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, 'wifi-sec.key-mgmt', 'wpa-psk', 'wifi-sec.psk', new_pass])
         
         # FIXED: Use Popen with a 1.5 second sleep so Flask can send the webpage 
         # to the browser BEFORE the radio restarts and drops the connection!
@@ -631,19 +625,18 @@ def system_status():
             parts = conn.rsplit(':', 1)
             if len(parts) == 2 and parts[1] in ['802-11-wireless', 'wifi']:
                 name = parts[0]
-                raw = subprocess.run(['sudo', 'nmcli', '--show-secrets', '-t', 'con', 'show', name], capture_output=True, text=True).stdout
-                props = dict(p.split(':', 1) for p in raw.splitlines() if ':' in p)
-                mode = props.get('802-11-wireless.mode') or props.get('wifi.mode') or ''
-                
+                mode = subprocess.run(['nmcli', '-g', '802-11-wireless.mode', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
                 if mode == 'ap':
                     hs_active = True
-                    ap_ssid = props.get('802-11-wireless.ssid') or props.get('wifi.ssid') or ''
-                    ap_psk = props.get('802-11-wireless-security.psk') or props.get('wifi-sec.psk') or ''
-                    ap_iface = props.get('GENERAL.DEVICES') or props.get('connection.interface-name') or ''
+                    ap_ssid = subprocess.run(['nmcli', '-g', '802-11-wireless.ssid', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                    ap_psk = subprocess.run(['sudo', 'nmcli', '-s', '-g', 'wifi-sec.psk', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                    if not ap_psk:
+                        ap_psk = subprocess.run(['sudo', 'nmcli', '-s', '-g', '802-11-wireless-security.psk', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                    ap_iface = subprocess.run(['nmcli', '-g', 'GENERAL.DEVICES', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
                 elif mode == 'infrastructure':
-                    wifi_ssid = props.get('802-11-wireless.ssid') or props.get('wifi.ssid') or ''
+                    wifi_ssid = subprocess.run(['nmcli', '-g', '802-11-wireless.ssid', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
     except Exception: pass
-
+    
     networks = []
     ap_ip = "10.42.0.1"
     try:
