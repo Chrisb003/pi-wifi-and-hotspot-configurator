@@ -62,22 +62,30 @@ def download_file(url, dest_path):
 
 def verify_and_download_core_files():
     """
-    Verifies that all core application files exist locally. If any are missing,
-    it dynamically downloads them from the GitHub repository.
-    This self-healing mechanism ensures that updates introducing new files 
-    (or accidental deletions) do not permanently break the application.
+    Verifies all core application files exist locally. If any are missing,
+    or if the terminal installer created the '.update_triggered' flag,
+    it dynamically downloads the fresh files from the GitHub repository.
     """
+    update_flag = os.path.join(script_dir, '.update_triggered')
+    force_update = os.path.exists(update_flag)
+    
     for file_path in CORE_FILES:
         full_path = os.path.join(script_dir, file_path)
-        # We do not overwrite an active app.py on startup
-        if not os.path.exists(full_path) and file_path != 'app.py':
-            print(f"Startup: Missing '{file_path}'. Attempting to download...")
-            url = f"{REPO_BASE}/pi-wifi-app/{file_path}"
-            success = download_file(url, full_path)
-            if success:
-                print(f"Startup: Successfully recovered '{file_path}'.")
-            else:
-                print(f"Startup: Failed to recover '{file_path}'. App may malfunction.")
+        
+        # Trigger download if the file is missing OR if the installer flagged an update
+        if force_update or not os.path.exists(full_path):
+            # Do NOT overwrite app.py because the install.sh script JUST downloaded the latest one!
+            if file_path != 'app.py':
+                print(f"Startup: Fetching '{file_path}'...")
+                url = f"{REPO_BASE}/pi-wifi-app/{file_path}"
+                download_file(url, full_path)
+                
+    # Clean up the flag so it boots normally (offline) next time
+    if force_update:
+        try:
+            os.remove(update_flag)
+            print("Startup: Terminal update synchronization complete.")
+        except Exception: pass
 
 def cleanup_obsolete_files():
     """

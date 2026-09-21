@@ -187,21 +187,26 @@ def download_file(url, dest_path):
 def verify_and_download_core_files():
     """
     Verifies that all core OLED files exist locally. If any are missing,
+    or if the terminal installer created the '.update_triggered' flag,
     it dynamically downloads them from the GitHub repository.
-    This self-healing mechanism ensures the background daemon does not crash
-    if files are accidentally deleted or introduced in an update.
     """
+    update_flag = os.path.join(SCRIPT_DIR, '.update_triggered')
+    force_update = os.path.exists(update_flag)
+    
     for file_path in CORE_FILES:
         full_path = os.path.join(SCRIPT_DIR, file_path)
-        # We do not overwrite an active monitor.py on startup
-        if not os.path.exists(full_path) and file_path != 'monitor.py':
-            print(f"Startup: Missing '{file_path}'. Attempting to download...")
-            url = f"{REPO_BASE}/oled_monitor/{file_path}"
-            success = download_file(url, full_path)
-            if success:
-                print(f"Startup: Successfully recovered '{file_path}'.")
-            else:
-                print(f"Startup: Failed to recover '{file_path}'.")
+        
+        if force_update or not os.path.exists(full_path):
+            if file_path != 'monitor.py':
+                print(f"Startup: Fetching '{file_path}'...")
+                url = f"{REPO_BASE}/oled_monitor/{file_path}"
+                download_file(url, full_path)
+                
+    if force_update:
+        try:
+            os.remove(update_flag)
+            print("Startup: Terminal update synchronization complete.")
+        except Exception: pass
 
 def cleanup_obsolete_files():
     """

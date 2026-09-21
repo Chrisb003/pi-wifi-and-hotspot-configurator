@@ -2,7 +2,7 @@
 
 # ==========================================
 # Pi WiFi, Hotspot & OLED Manager Installer
-# Version: 2.4.0 (Smart Refresh Logic Added)
+# Version: 1.0.0
 # ==========================================
 INSTALLER_VERSION="1.0.0"
 REPO_BASE="https://raw.githubusercontent.com/Chrisb003/pi-wifi-and-hotspot-configurator/main"
@@ -280,6 +280,9 @@ if [ "$INSTALL_OLED" = "yes" ]; then
     curl -sSL "$REPO_BASE/oled_monitor/monitor.py" -o "$OLED_DIR/monitor.py"
     curl -sSL "$REPO_BASE/oled_monitor/version.json" -o "$OLED_DIR/version.json"
 
+    # Tell monitor.py to fetch the rest of the files when it restarts
+    touch "$OLED_DIR/.update_triggered"
+
     # Create OLED Systemd Service
     # Ensures the OLED script runs automatically on boot as a background daemon
     echo ">>> Creating OLED Systemd Service..."
@@ -319,6 +322,9 @@ if [ "$INSTALL_WIFI" = "yes" ]; then
     echo ">>> Downloading WiFi Manager files..."
     curl -sSL "$REPO_BASE/pi-wifi-app/app.py" -o "$WIFI_DIR/app.py"
     curl -sSL "$REPO_BASE/pi-wifi-app/version.json" -o "$WIFI_DIR/version.json"
+
+    # Tell app.py to fetch the rest of the files when it restarts
+    touch "$WIFI_DIR/.update_triggered"
 
     # Web Authentication Setup
     # Generates a secure werkzeug password hash natively through Python during installation
