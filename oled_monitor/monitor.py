@@ -9,6 +9,8 @@ import os
 import re
 import sys
 import smbus
+import urllib.request
+from urllib.error import URLError
 from PIL import Image, ImageDraw, ImageFont
 import adafruit_ssd1306
 
@@ -152,6 +154,73 @@ DEFAULT_JSON = """{
 }"""
 
 # ==============================================================================
+# REPOSITORY & SELF-HEALING CONFIGURATION
+# ==============================================================================
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_BASE = "https://raw.githubusercontent.com/Chrisb003/pi-wifi-and-hotspot-configurator/main"
+
+# Core files required for the OLED monitor to function correctly
+CORE_FILES = [
+    'monitor.py',
+    'version.json'
+]
+
+# Legacy files from older versions that should be deleted to prevent clutter
+OBSOLETE_FILES = []
+
+def download_file(url, dest_path):
+    """
+    Securely downloads a file from a URL to a local destination using urllib.
+    Automatically creates any missing target directories.
+    Returns True on success, False if a network or writing error occurs.
+    """
+    try:
+        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response, open(dest_path, 'wb') as out_file:
+            out_file.write(response.read())
+        return True
+    except Exception as e:
+        print(f"Error downloading {url}: {e}")
+        return False
+
+def verify_and_download_core_files():
+    """
+    Verifies that all core OLED files exist locally. If any are missing,
+    it dynamically downloads them from the GitHub repository.
+    This self-healing mechanism ensures the background daemon does not crash
+    if files are accidentally deleted or introduced in an update.
+    """
+    for file_path in CORE_FILES:
+        full_path = os.path.join(SCRIPT_DIR, file_path)
+        # We do not overwrite an active monitor.py on startup
+        if not os.path.exists(full_path) and file_path != 'monitor.py':
+            print(f"Startup: Missing '{file_path}'. Attempting to download...")
+            url = f"{REPO_BASE}/oled_monitor/{file_path}"
+            success = download_file(url, full_path)
+            if success:
+                print(f"Startup: Successfully recovered '{file_path}'.")
+            else:
+                print(f"Startup: Failed to recover '{file_path}'.")
+
+def cleanup_obsolete_files():
+    """
+    Scans for and safely deletes legacy files from older versions of the app.
+    """
+    for file_path in OBSOLETE_FILES:
+        full_path = os.path.join(SCRIPT_DIR, file_path)
+        if os.path.exists(full_path):
+            try:
+                os.remove(full_path)
+                print(f"Startup: Cleaned up obsolete file '{file_path}'.")
+            except Exception as e:
+                print(f"Startup: Failed to remove obsolete file '{file_path}': {e}")
+
+# Run self-healing and cleanup routines prior to standard execution
+verify_and_download_core_files()
+cleanup_obsolete_files()
+
+# ==============================================================================
 # CORE FUNCTIONS
 # ==============================================================================
 
@@ -162,8 +231,8 @@ def load_settings():
     it automatically generates a fresh settings.json using DEFAULT_JSON.
     It strips Javascript-style comments (//) before parsing so the user can easily read the file.
     """
-    settings_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
-    reset_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reset')
+    settings_file = os.path.join(SCRIPT_DIR, 'settings.json')
+    reset_file = os.path.join(SCRIPT_DIR, 'reset')
     
     # Check for reset trigger or missing config
     if os.path.exists(reset_file) or not os.path.exists(settings_file):

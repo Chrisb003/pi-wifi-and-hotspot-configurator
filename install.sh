@@ -315,15 +315,10 @@ if [ "$INSTALL_WIFI" = "yes" ]; then
         echo "$DEFAULT_PORT" > "$PORT_FILE"
     fi
 
-    # Download all necessary Python, HTML, and Version files from GitHub
+    # Download main app code, and Version files from GitHub, Rest of files will download on first run
     echo ">>> Downloading WiFi Manager files..."
     curl -sSL "$REPO_BASE/pi-wifi-app/app.py" -o "$WIFI_DIR/app.py"
     curl -sSL "$REPO_BASE/pi-wifi-app/version.json" -o "$WIFI_DIR/version.json"
-    curl -sSL "$REPO_BASE/pi-wifi-app/templates/index.html" -o "$WIFI_DIR/templates/index.html"
-    curl -sSL "$REPO_BASE/pi-wifi-app/templates/login.html" -o "$WIFI_DIR/templates/login.html"
-    curl -sSL "$REPO_BASE/pi-wifi-app/templates/settings.html" -o "$WIFI_DIR/templates/settings.html"
-    curl -sSL "$REPO_BASE/pi-wifi-app/templates/hotspot.html" -o "$WIFI_DIR/templates/hotspot.html"
-    curl -sSL "$REPO_BASE/pi-wifi-app/templates/oled.html" -o "$WIFI_DIR/templates/oled.html"
 
     # Web Authentication Setup
     # Generates a secure werkzeug password hash natively through Python during installation

@@ -1,17 +1,30 @@
-// ==========================================
+// ==============================================================================
 // SPA NAVIGATION & TIMEOUT LOGIC
-// ==========================================
+// ==============================================================================
 let inactivityTimer;
 
+/**
+ * Resets the 30-minute inactivity timer.
+ * Triggered by mouse movements, clicks, and key presses.
+ * If the user is idle for 30 minutes, it displays a blur overlay.
+ */
 function resetInactivityTimer() {
     clearTimeout(inactivityTimer);
     document.getElementById('timeoutOverlay').style.display = 'none';
-    // 30 minutes = 30 * 60 * 1000 = 1800000 ms
+    
+    // 30 minutes = 30 * 60 * 1000 = 1,800,000 ms
     inactivityTimer = setTimeout(() => {
         document.getElementById('timeoutOverlay').style.display = 'flex';
     }, 1800000); 
 }
 
+/**
+ * Handles the Single Page Application (SPA) navigation.
+ * Hides all sections, removes active classes from the menu, and then
+ * displays the requested section, saving the state to local storage.
+ * 
+ * @param {string} sectionId - The ID suffix of the section to show (e.g., 'wifi', 'oled')
+ */
 function showSection(sectionId) {
     document.querySelectorAll('.nav-section').forEach(el => el.style.display = 'none');
     document.querySelectorAll('.nav-links a').forEach(el => el.classList.remove('active'));
@@ -24,20 +37,31 @@ function showSection(sectionId) {
     }
 }
 
+/**
+ * Toggles the web interface between Dark and Light mode.
+ * Saves the user's preference in the browser's localStorage so it persists across reloads.
+ */
 function toggleTheme() {
     const isLight = document.body.classList.toggle('light-mode');
     localStorage.setItem('theme', isLight ? 'light' : 'dark');
     document.getElementById('themeToggle').innerText = isLight ? '🌙 Dark' : '☀️ Light';
 }
 
-// ==========================================
+// ==============================================================================
 // UPDATE MANAGER LOGIC
-// ==========================================
+// ==============================================================================
+
+/**
+ * Fetches the latest version data and changelogs from the backend API.
+ * Displays the Update Modal and builds side-by-side columns comparing
+ * the local installed versions to the remote GitHub versions.
+ */
 async function checkForUpdates() {
     const modal = document.getElementById('updateModal');
     const content = document.getElementById('updateBody');
     const updateBtn = document.getElementById('runUpdateBtn');
     
+    // Show modal in a loading state
     modal.style.display = 'flex';
     content.innerHTML = '<div style="text-align:center; padding: 40px;">Searching GitHub for latest versions...</div>';
     updateBtn.style.display = 'none';
@@ -54,7 +78,7 @@ async function checkForUpdates() {
         let html = '<div class="update-columns">';
         let updatesAvailable = [];
         
-        // WiFi Column
+        // --- WiFi App Column ---
         html += `<div class="update-col">
                     <h3 style="margin-top:0;">WiFi App</h3>
                     <div style="font-size: 13px; margin-bottom: 15px;">
@@ -65,7 +89,7 @@ async function checkForUpdates() {
         html += buildChangelogHtml(data.wifi.changelog);
         html += `</div>`;
 
-        // OLED Column
+        // --- OLED Monitor Column (Only show if installed) ---
         if (data.oled.installed) {
             html += `<div class="update-col">
                         <h3 style="margin-top:0;">OLED Monitor</h3>
@@ -81,6 +105,7 @@ async function checkForUpdates() {
         html += '</div>';
         content.innerHTML = html;
 
+        // If updates are found, show the install button and attach the target components
         if (updatesAvailable.length > 0) {
             updateBtn.style.display = 'inline-block';
             updateBtn.onclick = () => executeUpdate(updatesAvailable);
@@ -93,6 +118,12 @@ async function checkForUpdates() {
     }
 }
 
+/**
+ * Transforms the parsed JSON changelog data into formatted HTML.
+ * 
+ * @param {Array} changelogData - The structured array of releases and bullet points.
+ * @returns {string} - Formatted HTML string ready to be injected into the DOM.
+ */
 function buildChangelogHtml(changelogData) {
     if (!changelogData || changelogData.length === 0) return '<p style="font-size:12px; color:var(--info-text);">No recent changelog data.</p>';
     
@@ -100,9 +131,11 @@ function buildChangelogHtml(changelogData) {
     changelogData.forEach(release => {
         html += `<div class="changelog-release">`;
         html += `<h3 class="changelog-title">[${release.version}] - ${release.title}</h3>`;
+        
         release.sections.forEach(sec => {
             html += `<h4 class="changelog-subtitle">${sec.subtitle}</h4>`;
             html += `<ul class="changelog-bullets">`;
+            
             sec.bullets.forEach(b => {
                 if (b.type === 'space') {
                     html += `<div class="changelog-space"></div>`;
@@ -110,6 +143,7 @@ function buildChangelogHtml(changelogData) {
                     html += `<li>${b.content}</li>`;
                 }
             });
+            
             html += `</ul>`;
         });
         html += `</div>`;
@@ -117,6 +151,12 @@ function buildChangelogHtml(changelogData) {
     return html;
 }
 
+/**
+ * Triggers the backend OTA update process for the selected components.
+ * Displays a loading screen during the download and reloads the page upon success.
+ * 
+ * @param {Array} components - List of components to update (e.g., ['wifi', 'oled'])
+ */
 async function executeUpdate(components) {
     const content = document.getElementById('updateBody');
     const updateBtn = document.getElementById('runUpdateBtn');
@@ -143,15 +183,22 @@ async function executeUpdate(components) {
     }
 }
 
+/**
+ * Closes the update modal.
+ */
 function closeModal() {
     document.getElementById('updateModal').style.display = 'none';
 }
 
-// ==========================================
+// ==============================================================================
 // WIFI & HOTSPOT LOGIC
-// ==========================================
+// ==============================================================================
 let interfacesData = [];
 
+/**
+ * Fetches available network interfaces from the backend.
+ * Populates the dropdown menus for both the WiFi scanner and the Hotspot configurator.
+ */
 async function loadInterfaces() {
     try {
         const res = await fetch('/interfaces');
@@ -164,12 +211,17 @@ async function loadInterfaces() {
         wifiSelect.innerHTML = '';
         if(hotspotSelect) hotspotSelect.innerHTML = '';
         
+        // Hide the dropdowns entirely if no network interfaces are found
         if (data.interfaces.length === 0) { 
             wifiSelect.style.display = 'none'; 
-            if(hotspotSelect) { hotspotSelect.style.display = 'none'; document.getElementById('ifaceLabel').style.display = 'none'; }
+            if(hotspotSelect) { 
+                hotspotSelect.style.display = 'none'; 
+                document.getElementById('ifaceLabel').style.display = 'none'; 
+            }
             return; 
         }
         
+        // Populate dropdown options
         data.interfaces.forEach(iface => {
             const optW = document.createElement('option');
             optW.value = iface.name;
@@ -184,6 +236,7 @@ async function loadInterfaces() {
             }
         });
         
+        // Set defaults based on active system states
         if (data.default) wifiSelect.value = data.default;
         
         if (hotspotSelect && window.HOTSPOT_IFACE) {
@@ -195,13 +248,22 @@ async function loadInterfaces() {
         }
         
         checkWarning();
+        
+        // Hide dropdowns if there is only 1 interface available (no choice to be made)
         if (data.interfaces.length <= 1) {
             wifiSelect.style.display = 'none';
-            if(hotspotSelect) { hotspotSelect.style.display = 'none'; document.getElementById('ifaceLabel').style.display = 'none'; }
+            if(hotspotSelect) { 
+                hotspotSelect.style.display = 'none'; 
+                document.getElementById('ifaceLabel').style.display = 'none'; 
+            }
         }
     } catch (err) {}
 }
 
+/**
+ * Checks if the user is trying to scan on an interface that is currently broadcasting a Hotspot.
+ * If so, displays a warning block.
+ */
 function checkWarning() {
     const selected = document.getElementById('wifiInterfaceSelect').value;
     const iface = interfacesData.find(i => i.name === selected);
@@ -210,6 +272,10 @@ function checkWarning() {
     else warning.classList.add('hidden');
 }
 
+/**
+ * Requests the backend to perform an nmcli WiFi scan on the chosen interface.
+ * Updates the network dropdown list upon success.
+ */
 async function scanNetworks() {
     const scanBtn = document.getElementById('scanBtn');
     const connectForm = document.getElementById('connectForm');
@@ -221,22 +287,32 @@ async function scanNetworks() {
     try {
         const response = await fetch('/scan?device=' + encodeURIComponent(device));
         const data = await response.json();
+        
         if (data.status === 'success') {
             ssidSelect.innerHTML = '<option value="">Select a network...</option>';
             data.networks.forEach(net => {
                 const option = document.createElement('option');
-                option.value = net.ssid; option.innerText = `${net.ssid} (Signal: ${net.signal}%)`;
+                option.value = net.ssid; 
+                option.innerText = `${net.ssid} (Signal: ${net.signal}%)`;
                 ssidSelect.appendChild(option);
             });
             connectForm.classList.remove('hidden');
             scanBtn.innerText = "Refresh Networks";
         } else {
-            showMessage('wifiMsg', 'error', data.message); scanBtn.innerText = "Search for WiFi Networks";
+            showMessage('wifiMsg', 'error', data.message); 
+            scanBtn.innerText = "Search for WiFi Networks";
         }
-    } catch (err) { showMessage('wifiMsg', 'error', 'Network error.'); scanBtn.innerText = "Search for WiFi Networks"; }
+    } catch (err) { 
+        showMessage('wifiMsg', 'error', 'Network error.'); 
+        scanBtn.innerText = "Search for WiFi Networks"; 
+    }
+    
     scanBtn.disabled = false;
 }
 
+/**
+ * Sends a connection request to the backend with the selected SSID and Password.
+ */
 async function connectNetwork() {
     const connectBtn = document.getElementById('connectBtn');
     const ssid = document.getElementById('ssidSelect').value;
@@ -245,6 +321,7 @@ async function connectNetwork() {
     const device = document.getElementById('wifiInterfaceSelect').value;
     
     if (!ssid) return showMessage('wifiMsg', 'error', 'Select a network.');
+    
     connectBtn.innerText = "Connecting..."; connectBtn.disabled = true; showMessage('wifiMsg', '', '');
     
     try {
@@ -253,46 +330,92 @@ async function connectNetwork() {
             body: JSON.stringify({ ssid, password, autoconnect, device })
         });
         const data = await response.json();
-        if (data.status === 'success') { showMessage('wifiMsg', 'success', data.message); document.getElementById('password').value = ''; loadInterfaces(); }
-        else { showMessage('wifiMsg', 'error', 'Failed: ' + data.message); }
-    } catch (err) { showMessage('wifiMsg', 'error', 'Network error.'); }
+        
+        if (data.status === 'success') { 
+            showMessage('wifiMsg', 'success', data.message); 
+            document.getElementById('password').value = ''; 
+            loadInterfaces(); 
+        } else { 
+            showMessage('wifiMsg', 'error', 'Failed: ' + data.message); 
+        }
+    } catch (err) { 
+        showMessage('wifiMsg', 'error', 'Network error.'); 
+    }
+    
     connectBtn.innerText = "Connect"; connectBtn.disabled = false;
 }
 
+/**
+ * Disconnects the selected network interface.
+ */
 async function disconnectNetwork() {
     const btn = document.getElementById('disconnectBtn');
     const device = document.getElementById('wifiInterfaceSelect').value;
+    
     btn.innerText = "Disconnecting..."; btn.disabled = true; showMessage('wifiMsg', '', '');
+    
     try {
-        const response = await fetch('/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device }) });
+        const response = await fetch('/disconnect', { 
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ device }) 
+        });
         const data = await response.json();
-        if (data.status === 'success') { showMessage('wifiMsg', 'success', data.message); loadInterfaces(); }
-        else { showMessage('wifiMsg', 'error', 'Failed: ' + data.message); }
-    } catch (err) { showMessage('wifiMsg', 'error', 'Network error.'); }
+        
+        if (data.status === 'success') { 
+            showMessage('wifiMsg', 'success', data.message); 
+            loadInterfaces(); 
+        } else { 
+            showMessage('wifiMsg', 'error', 'Failed: ' + data.message); 
+        }
+    } catch (err) { 
+        showMessage('wifiMsg', 'error', 'Network error.'); 
+    }
+    
     btn.innerText = "Disconnect Current WiFi"; btn.disabled = false;
 }
 
+/**
+ * Helper function to inject success/error alert boxes into specific areas of the DOM.
+ * Automatically clears success messages after 4 seconds.
+ * 
+ * @param {string} targetId - The HTML ID of the message container to inject into.
+ * @param {string} type - 'success' or 'error' class names.
+ * @param {string} text - The message body to display.
+ */
 function showMessage(targetId, type, text) {
     const msgDiv = document.getElementById(targetId);
     if (!text) { msgDiv.className = 'hidden'; return; }
-    msgDiv.innerText = text; msgDiv.className = type;
+    
+    msgDiv.innerText = text; 
+    msgDiv.className = type;
     msgDiv.style.display = 'block';
-    if(type === 'success') setTimeout(() => msgDiv.style.display = 'none', 4000);
+    
+    if(type === 'success') {
+        setTimeout(() => msgDiv.style.display = 'none', 4000);
+    }
 }
 
-// ==========================================
-// OLED LOGIC (Only runs if installed)
-// ==========================================
+// ==============================================================================
+// OLED LOGIC (Only runs if the OLED physical screen is installed)
+// ==============================================================================
 let oledSettings = {};
 let systemStatus = {};
 
+/**
+ * Continuously polls the backend to retrieve live system stats (temperature, ports, IPs).
+ * Updates the Configuration Guide visual variables and calls renderPreview() to simulate the screen.
+ */
 async function fetchSystemStatus() {
     try {
         const res = await fetch('/api/system/status');
         systemStatus = await res.json();
         
-        if(systemStatus.temp !== undefined) document.getElementById('liveTemp').innerText = `Pi: ${systemStatus.temp.toFixed(1)}°C`;
+        // Update live header badge
+        if(systemStatus.temp !== undefined) {
+            document.getElementById('liveTemp').innerText = `Pi: ${systemStatus.temp.toFixed(1)}°C`;
+        }
         
+        // Update documentation variable cheat-sheet
         document.getElementById('doc_time').innerText = systemStatus.time;
         document.getElementById('doc_date').innerText = systemStatus.date;
         document.getElementById('doc_temp').innerText = systemStatus.temp;
@@ -306,11 +429,17 @@ async function fetchSystemStatus() {
     } catch(e) {}
 }
 
+/**
+ * Initializes the OLED Web form logic. 
+ * Parses the raw settings.json payload injected into window.OLED_SETTINGS_JSON 
+ * and applies all values to the global settings form inputs.
+ */
 function initOLEDForm() {
     if(!window.OLED_INSTALLED) return;
     
     oledSettings = window.OLED_SETTINGS_JSON || {};
     
+    // Safety fallback defaults
     const DEFAULTS = { 
         enable_screen: true, enable_fan: true, brightness: 255, 
         fan_on_temp: 55.0, fan_off_temp: 45.0, minimum_fan_run_time_seconds: 60,
@@ -322,6 +451,7 @@ function initOLEDForm() {
     };
     for(let k in DEFAULTS) { if(oledSettings[k] === undefined) oledSettings[k] = DEFAULTS[k]; }
 
+    // Map JSON to hardware inputs
     document.getElementById('enable_screen').checked = oledSettings.enable_screen;
     document.getElementById('enable_fan').checked = oledSettings.enable_fan;
     document.getElementById('fan_on').value = oledSettings.fan_on_temp;
@@ -347,6 +477,7 @@ function initOLEDForm() {
     
     renderPages();
     
+    // Attach live listeners for preview manipulation
     const inputs = document.querySelectorAll('#section-oled input');
     inputs.forEach(i => {
         i.addEventListener('input', () => {
@@ -356,10 +487,15 @@ function initOLEDForm() {
     });
     document.getElementById('pagesContainer').addEventListener('input', renderPreview);
     
+    // Start system status polling
     fetchSystemStatus();
     setInterval(fetchSystemStatus, 5000);
 }
 
+/**
+ * Dynamically builds the HTML cards for every page defined in the OLED's 'pages' array.
+ * Rebuilds the preview selector dropdown simultaneously.
+ */
 function renderPages() {
     const container = document.getElementById('pagesContainer');
     container.innerHTML = '';
@@ -368,9 +504,11 @@ function renderPages() {
         container.innerHTML = '<div style="text-align:center; color:#888; font-size:14px; padding:20px;">No pages configured. Click Add Page.</div>';
     }
 
+    // Populate preview dropdown
     const previewSelect = document.getElementById('previewPageSelect');
     const currentPreview = previewSelect.value;
     previewSelect.innerHTML = '';
+    
     (oledSettings.pages || []).forEach((p, i) => {
         let opt = document.createElement('option');
         opt.value = i;
@@ -378,12 +516,14 @@ function renderPages() {
         opt.innerText = `Preview Page ${i + 1} (${typeLabel})`;
         previewSelect.appendChild(opt);
     });
+    
     if (currentPreview && currentPreview < (oledSettings.pages || []).length) {
         previewSelect.value = currentPreview;
     } else if ((oledSettings.pages || []).length > 0) {
         previewSelect.value = "0";
     }
 
+    // Build UI blocks per page
     (oledSettings.pages || []).forEach((page, index) => {
         const card = document.createElement('div');
         card.className = 'page-card';
@@ -409,7 +549,7 @@ function renderPages() {
             `;
         }
 
-        // Port UI injections for all types
+        // Port appending toggles
         const portUI = `
             <div class="flex-row" style="margin-top: 10px;">
                 <div>
@@ -467,6 +607,9 @@ function renderPages() {
     renderPreview();
 }
 
+/**
+ * Changes a page's layout type, applies standard defaults to custom lines if needed, and re-renders.
+ */
 function updatePageType(index, newType) {
     syncStateFromUI();
     oledSettings.pages[index].type = newType;
@@ -474,6 +617,9 @@ function updatePageType(index, newType) {
     renderPages();
 }
 
+/**
+ * Adds a new default custom text page to the end of the OLED configuration array.
+ */
 function addPage() {
     syncStateFromUI();
     if(!oledSettings.pages) oledSettings.pages = [];
@@ -481,12 +627,19 @@ function addPage() {
     renderPages();
 }
 
+/**
+ * Deletes an existing OLED page by index.
+ */
 function deletePage(index) {
     syncStateFromUI();
     oledSettings.pages.splice(index, 1);
     renderPages();
 }
 
+/**
+ * Scrapes every active form input on the UI to build the exact JavaScript object 
+ * representation of what will be written to 'settings.json'.
+ */
 function syncStateFromUI() {
     oledSettings.enable_screen = document.getElementById('enable_screen').checked;
     oledSettings.enable_fan = document.getElementById('enable_fan').checked;
@@ -531,15 +684,28 @@ function syncStateFromUI() {
     });
 }
 
+/**
+ * Helper function to dynamically construct the ":80/8080/9000" port string 
+ * based on the active toggles for the specific page being processed.
+ * 
+ * @param {Object} page - The specific page configuration mapping object
+ * @returns {string} - The built suffix string, or empty.
+ */
 function buildPortSuffix(page) {
     let ports = [];
     if(page.show_diagnostic_port && systemStatus.diag_port) ports.push(systemStatus.diag_port);
     if(page.show_wifi_port && systemStatus.wifi_port) ports.push(systemStatus.wifi_port);
     if(page.custom_port && page.custom_port.trim() !== '') ports.push(page.custom_port.trim());
+    
     if(ports.length > 0) return ":" + ports.join("/");
     return "";
 }
 
+/**
+ * Paints the 128x32 OLED preview box in the UI.
+ * Applies visual overrides (rotation, inversion, opacity) and simulates text parsing.
+ * Analyzes the layout for logical warnings (like attempting to render a hotspot page when the hotspot is down).
+ */
 function renderPreview() {
     if(!window.OLED_INSTALLED) return;
     syncStateFromUI();
@@ -550,6 +716,7 @@ function renderPreview() {
     
     let previewWarnings = [];
     
+    // Apply user color themes to the preview
     if (oledSettings.invert_colors) {
         oledBox.style.background = '#fff'; oledBox.style.color = '#000';
         box.style.color = '#000';
@@ -558,6 +725,7 @@ function renderPreview() {
         box.style.color = '#fff';
     }
     
+    // Rotate canvas entirely if standard preview exact rotation is checked
     const exactPreview = document.getElementById('exact_preview_toggle').checked;
     oledBox.style.transform = (oledSettings.rotate_180 && exactPreview) ? 'rotate(180deg)' : 'none';
 
@@ -573,6 +741,7 @@ function renderPreview() {
     
     if(!p) { box.innerHTML = ''; warnDiv.style.display = 'none'; return; }
 
+    // Logical constraint warnings calculation
     if (!oledSettings.enable_screen) previewWarnings.push("OLED Screen is currently globally DISABLED in hardware settings.");
     if (p.duration <= 0) previewWarnings.push("This page is disabled (Duration 0).");
     if (p.type === 'hotspot_details' && systemStatus.hotspot_active === false) {
@@ -586,6 +755,7 @@ function renderPreview() {
         warnDiv.style.display = 'none';
     }
 
+    // Render text output
     let lines = [];
     let portSuffix = buildPortSuffix(p);
     
@@ -594,7 +764,7 @@ function renderPreview() {
     } else if(p.type === 'hotspot_details') {
         lines = [`Pi: ${systemStatus.ap_ssid || "My_Hotspot"}`, `PW: ${systemStatus.ap_pw || "Pass123"}`, `IP: ${systemStatus.ap_ip || "10.42.0.1"}${portSuffix}`];
     } else if(p.type === 'custom') {
-        // Fallback port string without leading colon if purely replaced inline
+        // Fallback port string without leading colon if the user relies purely on {web_port} inline
         let inlinePort = portSuffix.startsWith(':') ? portSuffix.substring(1) : "80"; 
         
         lines = (p.lines || []).map(l => l
@@ -620,6 +790,10 @@ function renderPreview() {
     box.innerHTML = lines.map(l => `<div>${l}</div>`).join('');
 }
 
+/**
+ * Validates system states, calculates warnings, and issues the JSON POST request 
+ * to save changes to the physical OLED monitor file.
+ */
 async function saveOLEDConfig() {
     syncStateFromUI();
     
@@ -646,6 +820,10 @@ async function saveOLEDConfig() {
     }
 }
 
+/**
+ * Issues a POST command to wipe the OLED configuration back to factory settings.
+ * Refreshes the page upon success.
+ */
 async function resetOLEDConfig() {
     if(!confirm("Are you sure you want to completely reset the OLED settings?")) return;
     showMessage('oledMsg', 'success', 'Sending reset command...');
@@ -659,22 +837,48 @@ async function resetOLEDConfig() {
     }
 }
 
-// Initialization Bootstrapper
+/**
+ * Toggles the visibility of a password input field between 'password' and 'text'.
+ * 
+ * @param {string} inputId - The ID of the target password input element.
+ * @param {HTMLElement} btn - The toggle button element itself.
+ */
+function togglePasswordVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.innerText = '🙈'; // Switch to closed eye symbol when visible
+    } else {
+        input.type = 'password';
+        btn.innerText = '👁️'; // Switch back to open eye symbol
+    }
+}
+
+// ==============================================================================
+// INITIALIZATION BOOTSTRAPPER
+// ==============================================================================
+/**
+ * Main application bootstrapper. Runs immediately when the DOM completes loading.
+ * Configures event listeners, determines the active tab, and kicks off async data requests.
+ */
 window.onload = () => {
+    // Sync the dark/light mode toggle text immediately upon loading
     document.getElementById('themeToggle').innerText = document.body.classList.contains('light-mode') ? '🌙 Dark' : '☀️ Light';
     
-    // Set up inactivity timers
+    // Set up inactivity timers to monitor user engagement across the document
     document.addEventListener('mousemove', resetInactivityTimer);
     document.addEventListener('keypress', resetInactivityTimer);
     document.addEventListener('click', resetInactivityTimer);
     resetInactivityTimer();
     
-    // Determine last open tab
+    // Determine the last open SPA tab, defaulting to the WiFi scanner if none found
     let active = localStorage.getItem('activeSection') || 'wifi';
+    
+    // Prevent the user from navigating to a cached OLED tab if they uninstalled the component
     if(active === 'oled' && !window.OLED_INSTALLED) active = 'wifi';
     showSection(active);
     
-    // Initialize components
+    // Initialize components via async fetching
     loadInterfaces();
     initOLEDForm();
 };

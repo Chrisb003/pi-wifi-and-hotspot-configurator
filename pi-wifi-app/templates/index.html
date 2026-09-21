@@ -4,8 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Raspberry Pi Manager</title>
+    
+    <!-- Link to the external CSS stylesheet for global styling -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <!-- Pass backend variables directly to the external JS script securely -->
+    
+    <!-- 
+      JINJA2 VARIABLE INJECTION 
+      We pass backend Python variables directly into the global JavaScript 'window' object here. 
+      This allows our external 'script.js' file to securely read the system state without needing extra API calls.
+    -->
     <script>
         window.OLED_INSTALLED = {{ 'true' if oled_installed else 'false' }};
         window.HOTSPOT_IFACE = "{{ hotspot.iface if hotspot else '' }}";
@@ -13,21 +20,31 @@
     </script>
 </head>
 <body>
+    <!-- 
+      PREVENT THEME FLASHING
+      Checks local storage immediately as the body loads and applies the light-mode class if needed.
+      This prevents the screen from blinding the user with a white flash before switching to dark mode.
+    -->
     <script>if (localStorage.getItem('theme') === 'light') document.body.classList.add('light-mode');</script>
     
-    <!-- Timeout Overlay -->
+    <!-- ======================================================================= -->
+    <!-- OVERLAYS & MODALS                                                       -->
+    <!-- ======================================================================= -->
+
+    <!-- INACTIVITY TIMEOUT OVERLAY: Blurs the screen after 30 minutes of idle time -->
     <div id="timeoutOverlay" class="modal-overlay" onclick="resetInactivityTimer()">
         <h1>Session Inactive</h1>
         <p>You have been idle for 30 minutes. Click anywhere to resume.</p>
     </div>
 
-    <!-- Update Checker Modal -->
+    <!-- UPDATE CHECKER MODAL: Displays the side-by-side changelogs fetched from GitHub -->
     <div id="updateModal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
                 <h3 style="margin:0;">System Updates</h3>
                 <button class="btn-danger" onclick="closeModal()" style="padding: 6px 12px; font-weight: bold;">✕</button>
             </div>
+            <!-- The updateBody div is populated dynamically by JavaScript using the parsed GitHub markdown -->
             <div class="modal-body" id="updateBody"></div>
             <div class="modal-footer">
                 <button class="btn primary-btn" id="runUpdateBtn" style="width: auto; margin:0; display:none;">Install Updates</button>
@@ -35,23 +52,41 @@
         </div>
     </div>
 
+    <!-- ======================================================================= -->
+    <!-- MAIN APPLICATION UI                                                     -->
+    <!-- ======================================================================= -->
     <div class="main-wrapper">
-        <!-- Unified Top Navigation -->
+        
+        <!-- TOP NAVIGATION BAR: Unified menu that switches SPA sections via JavaScript -->
         <div class="top-bar">
             <div class="brand">Pi Manager</div>
             <div class="nav-links" style="display:flex; align-items:center;">
                 <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()">☀️ Light</button>
                 <a id="nav-wifi" onclick="showSection('wifi')">WiFi</a>
                 <a id="nav-hotspot" onclick="showSection('hotspot')">Hotspot</a>
-                {% if oled_installed %}<a id="nav-oled" onclick="showSection('oled')">OLED Display</a>{% endif %}
+                
+                <!-- Only show the OLED tab if the Python backend detects the oled_monitor folder -->
+                {% if oled_installed %}
+                    <a id="nav-oled" onclick="showSection('oled')">OLED Display</a>
+                {% endif %}
+                
                 <a id="nav-settings" onclick="showSection('settings')">Settings</a>
-                {% if auth_enabled %}&nbsp;|&nbsp; <a href="/logout">Logout</a>{% endif %}
+                
+                <!-- Only show Logout if a physical user credentials file exists -->
+                {% if auth_enabled %}
+                    &nbsp;|&nbsp; <a href="/logout">Logout</a>
+                {% endif %}
             </div>
         </div>
         
-        <!-- SECTION: WIFI SCANNER -->
+        <!-- ------------------------------------------------------------------- -->
+        <!-- SECTION: WIFI SCANNER & MANAGER                                     -->
+        <!-- ------------------------------------------------------------------- -->
         <div id="section-wifi" class="nav-section container narrow-container">
+            <!-- Hardware Interface Dropdown (e.g., wlan0, wlan1) -->
             <select id="wifiInterfaceSelect" onchange="checkWarning()"></select>
+            
+            <!-- Warning shown dynamically if the selected interface is broadcasting the Hotspot -->
             <div id="hotspotWarning" class="hidden warning-box">
                 ⚠️ <b>Note:</b> Connecting to a WiFi network on this adapter will temporarily disable your active Hotspot.
             </div>
@@ -59,10 +94,13 @@
             <h2>WiFi Configurator</h2>
             <button id="scanBtn" class="btn primary-btn" onclick="scanNetworks()">Search for WiFi Networks</button>
             
+            <!-- Connection Form (Hidden until a scan completes successfully) -->
             <div id="connectForm" class="hidden">
                 <select id="ssidSelect"><option value="">Select a network...</option></select>
                 <input type="password" id="password" placeholder="Password (leave empty if known/open)">
-                <label class="checkbox-label"><input type="checkbox" id="autoconnect" checked> Auto-connect in the future</label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="autoconnect" checked> Auto-connect in the future
+                </label>
                 <button id="connectBtn" class="btn primary-btn" onclick="connectNetwork()">Connect</button>
             </div>
             
@@ -70,22 +108,27 @@
             <div id="wifiMsg" class="hidden"></div>
         </div>
 
-        <!-- SECTION: HOTSPOT MANAGER -->
+        <!-- ------------------------------------------------------------------- -->
+        <!-- SECTION: HOTSPOT MANAGER                                            -->
+        <!-- ------------------------------------------------------------------- -->
         <div id="section-hotspot" class="nav-section container narrow-container">
             <h2 style="margin-top: 0;">Hotspot Manager</h2>
             <form action="/hotspot" method="POST">
                 <input type="hidden" name="action" value="save_and_toggle">
                 
                 <label class="checkbox-label" style="font-weight: bold;">
+                    <!-- Pre-checks the box if the backend detects the AP is currently active -->
                     <input type="checkbox" name="enable_hotspot" {% if hotspot and hotspot.active %}checked{% endif %}>
                     Enable Access Point (Hotspot)
                 </label>
                 <label class="checkbox-label" style="font-weight: bold;">
+                    <!-- Pre-checks if NetworkManager priorities are forced high -->
                     <input type="checkbox" name="force_hotspot" {% if force_hotspot %}checked{% endif %}>
                     Force Hotspot to start on boot (High Priority)
                 </label>
                 <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 20px 0;">
                 
+                <!-- Target Interface Selector -->
                 <label id="ifaceLabel" style="font-size:14px; font-weight:bold;">Bind to Interface</label>
                 <select name="device" id="hotspotInterfaceSelect"></select>
                 
@@ -93,15 +136,22 @@
                 <input type="text" name="ssid" value="{{ hotspot.ssid if hotspot else '' }}" required>
                 
                 <label style="font-size:14px; font-weight:bold;">Hotspot Password (min 8 chars)</label>
-                <input type="password" name="password" value="{{ hotspot.password if hotspot else '' }}" required>
+                <div class="password-wrapper">
+                    <input type="password" id="hotspotPasswordInput" name="password" value="{{ hotspot.password if hotspot else '' }}" required>
+                    <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('hotspotPasswordInput', this)">👁️</button>
+                </div>
                 
                 <button type="submit" class="btn primary-btn">Save & Apply Hotspot</button>
             </form>
         </div>
 
-        <!-- SECTION: WEB SETTINGS -->
+        <!-- ------------------------------------------------------------------- -->
+        <!-- SECTION: WEB SETTINGS                                               -->
+        <!-- ------------------------------------------------------------------- -->
         <div id="section-settings" class="nav-section container narrow-container">
             <h2 style="margin-top: 0;">Web Settings</h2>
+            
+            <!-- Credentials and Port Form -->
             <form action="/settings" method="POST">
                 <div style="font-size: 13px; color: var(--info-text); margin-bottom: 15px;">
                     Leave fields below blank to keep existing web login credentials.
@@ -112,13 +162,14 @@
                 <input type="password" name="password" placeholder="New Password">
                 
                 <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 20px 0;">
+                
                 <label style="font-size:14px; font-weight:bold;">Web Port</label>
                 <input type="number" name="port" value="{{ current_port }}" required>
                 
                 <button type="submit" class="btn primary-btn">Save Settings</button>
             </form>
 
-            <!-- NEW: Check for Updates Button -->
+            <!-- Manual Over-The-Air Update Trigger -->
             <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 20px 0;">
             <h3 style="margin-top: 0; font-size: 15px; color: var(--text-color);">System Updates</h3>
             <p style="font-size: 13px; color: var(--info-text); margin-top: 0; margin-bottom: 15px;">
@@ -127,16 +178,20 @@
             <button class="btn secondary-btn" onclick="checkForUpdates()" style="margin-bottom: 0;">Check for Updates</button>
         </div>
 
-        <!-- SECTION: OLED CONFIGURATOR -->
+        <!-- ------------------------------------------------------------------- -->
+        <!-- SECTION: OLED CONFIGURATOR (Conditional)                            -->
+        <!-- ------------------------------------------------------------------- -->
         {% if oled_installed %}
         <div id="section-oled" class="nav-section grid">
-            <!-- Global Settings Panel -->
+            
+            <!-- OLED Panel 1: Hardware & Global Variables -->
             <div class="panel">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h2 style="margin: 0;">Global Settings</h2>
                     <span id="liveTemp" class="live-badge">Pi: --.-°C</span>
                 </div>
                 
+                <!-- Fan Configuration -->
                 <h3 style="margin-top: 15px; margin-bottom: 10px; font-size: 15px; color: var(--text-color);">Fan Control</h3>
                 <label class="checkbox-label"><input type="checkbox" id="enable_fan"> Enable PoE Fan automatic control</label>
                 <div class="flex-row">
@@ -146,6 +201,7 @@
                 <label>Minimum Fan Run Time (sec, anti-flutter)</label>
                 <input type="number" id="fan_min_run" step="1">
 
+                <!-- Display Toggles -->
                 <h3 style="margin-top: 15px; margin-bottom: 10px; font-size: 15px; color: var(--text-color);">OLED Display & Warnings</h3>
                 <label class="checkbox-label"><input type="checkbox" id="enable_screen"> Enable OLED screen</label>
                 <label>Brightness: <span id="brightness_val" style="color: var(--text-color); font-weight:normal;">255</span></label>
@@ -155,10 +211,13 @@
                     <div><label class="checkbox-label"><input type="checkbox" id="invert_colors"> Invert Colors</label></div>
                 </div>
                 <label class="checkbox-label"><input type="checkbox" id="pixel_shift"> Enable Pixel Shift Screensaver (Anti-burn-in)</label>
+                
+                <!-- Warnings Trigger -->
                 <label class="checkbox-label" style="margin-top: 10px;"><input type="checkbox" id="show_warnings"> Show flashing Temp/Voltage warnings</label>
                 <label>Warning Trigger Temp (°C)</label>
                 <input type="number" id="warn_temp" step="0.5">
                 
+                <!-- Quiet Hours / Night Mode -->
                 <h3 style="margin-top: 15px; margin-bottom: 10px; font-size: 15px; color: var(--text-color);">Quiet Hours (Night Mode)</h3>
                 <label class="checkbox-label"><input type="checkbox" id="quiet_enabled"> Enable Quiet Hours (Disables Screen & Fan)</label>
                 <div class="flex-row">
@@ -166,6 +225,7 @@
                     <div><label>End Time</label><input type="time" id="quiet_end"></div>
                 </div>
 
+                <!-- Backend Polling Intervals -->
                 <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 20px 0;">
                 <div class="flex-row">
                     <div><label>Default Page Duration (sec)</label><input type="number" id="global_dur" step="1"></div>
@@ -175,13 +235,16 @@
                     <div><label>Hardware Scan Interval (sec)</label><input type="number" id="hw_interval" step="1"></div><div></div>
                 </div>
                 
+                <!-- Save / Reset Actions -->
                 <button class="btn btn-primary" style="margin-top: 10px;" onclick="saveOLEDConfig()">💾 Save & Apply to OLED</button>
                 <button class="btn" style="margin-top: 10px; border: 1px solid #888;" onclick="resetOLEDConfig()">⚠️ Factory Reset Config</button>
                 <div id="oledMsg" class="hidden" style="margin-top: 15px;"></div>
             </div>
 
-            <!-- Pages Configuration Panel -->
+            <!-- OLED Panel 2: Live Preview & Page Builder -->
             <div class="panel">
+                
+                <!-- Live Simulated OLED Canvas -->
                 <div class="preview-container">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                         <h3 style="margin: 0;">OLED Live Preview</h3>
@@ -192,15 +255,20 @@
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; max-width: 256px; margin-left: auto; margin-right: auto;">
                         <div style="font-size: 11px; color: #888;">Simulated Layout</div>
-                        <label class="checkbox-label" style="font-size: 11px; margin-bottom: 0; color: #888;"><input type="checkbox" id="exact_preview_toggle" checked onchange="renderPreview()" style="margin: 0 4px 0 0;"> Exact Rotation</label>
+                        <label class="checkbox-label" style="font-size: 11px; margin-bottom: 0; color: #888;">
+                            <input type="checkbox" id="exact_preview_toggle" checked onchange="renderPreview()" style="margin: 0 4px 0 0;"> Exact Rotation
+                        </label>
                     </div>
+                    <!-- Warnings appear here if the screen is disabled or hotspot is off -->
                     <div id="previewWarnings" class="preview-warning"></div>
                 </div>
                 
+                <!-- Cheat Sheet for Dynamic Variables -->
                 <div style="margin-bottom: 25px; padding: 20px; background: var(--card-bg); border: 1px solid var(--input-border); border-radius: 8px;">
                     <h3 style="margin-top: 0; margin-bottom: 15px; color: var(--text-color); border-bottom: 1px solid var(--input-border); padding-bottom: 10px;">Configuration Guide</h3>
                     <p style="margin: 5px 0 10px 0; font-size: 13px;">Type these exact markers in any custom text line to inject live data onto the screen:</p>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-family: 'Courier New', Courier, monospace; font-size: 12px; background: var(--input-bg); padding: 12px; border-radius: 6px; border: 1px solid var(--input-border); color: var(--text-color);">
+                        <!-- The spans are updated in real-time by JS calling /api/system/status -->
                         <div>{time} &nbsp;&nbsp;→ <span id="doc_time">--:--:--</span></div>
                         <div>{date} &nbsp;&nbsp;→ <span id="doc_date">----</span></div>
                         <div>{hour} / {minute} / {second}</div>
@@ -214,6 +282,7 @@
                     </div>
                 </div>
 
+                <!-- Page Array Builder (Injected by JS) -->
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h3 style="margin: 0;">Screen Pages</h3>
                     <button class="btn" style="width: auto; margin: 0; padding: 6px 12px;" onclick="addPage()">+ Add Page</button>
@@ -223,7 +292,9 @@
         </div>
         {% endif %}
 
-        <!-- Version Footer -->
+        <!-- ======================================================================= -->
+        <!-- GLOBAL FOOTER (Version Readout & Quick Update Link)                     -->
+        <!-- ======================================================================= -->
         <div class="footer">
             WiFi UI v{{ local_wifi_version }} 
             {% if oled_installed %} | OLED v{{ local_oled_version }} {% endif %}
@@ -232,6 +303,7 @@
         </div>
     </div>
     
+    <!-- External JavaScript containing the core application logic -->
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

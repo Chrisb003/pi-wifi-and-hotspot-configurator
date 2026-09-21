@@ -27,6 +27,76 @@ local_wifi_version_file = os.path.join(script_dir, 'version.json')
 
 REPO_BASE = "https://raw.githubusercontent.com/Chrisb003/pi-wifi-and-hotspot-configurator/main"
 
+# Core application files required for the SPA to function correctly
+CORE_FILES = [
+    'app.py',
+    'version.json',
+    'templates/index.html',
+    'templates/login.html',
+    'static/style.css',
+    'static/script.js'
+]
+
+# Legacy files from older versions that should be deleted to prevent clutter
+OBSOLETE_FILES = [
+    'templates/settings.html',
+    'templates/hotspot.html',
+    'templates/oled.html'
+]
+
+def download_file(url, dest_path):
+    """
+    Securely downloads a file from a URL to a local destination using urllib.
+    Automatically creates any missing target directories (e.g., /static/).
+    Returns True on success, False if a network or writing error occurs.
+    """
+    try:
+        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response, open(dest_path, 'wb') as out_file:
+            out_file.write(response.read())
+        return True
+    except Exception as e:
+        print(f"Error downloading {url}: {e}")
+        return False
+
+def verify_and_download_core_files():
+    """
+    Verifies that all core application files exist locally. If any are missing,
+    it dynamically downloads them from the GitHub repository.
+    This self-healing mechanism ensures that updates introducing new files 
+    (or accidental deletions) do not permanently break the application.
+    """
+    for file_path in CORE_FILES:
+        full_path = os.path.join(script_dir, file_path)
+        # We do not overwrite an active app.py on startup
+        if not os.path.exists(full_path) and file_path != 'app.py':
+            print(f"Startup: Missing '{file_path}'. Attempting to download...")
+            url = f"{REPO_BASE}/pi-wifi-app/{file_path}"
+            success = download_file(url, full_path)
+            if success:
+                print(f"Startup: Successfully recovered '{file_path}'.")
+            else:
+                print(f"Startup: Failed to recover '{file_path}'. App may malfunction.")
+
+def cleanup_obsolete_files():
+    """
+    Scans for and safely deletes legacy files from older versions of the app 
+    (e.g., obsolete HTML templates from before the SPA migration).
+    """
+    for file_path in OBSOLETE_FILES:
+        full_path = os.path.join(script_dir, file_path)
+        if os.path.exists(full_path):
+            try:
+                os.remove(full_path)
+                print(f"Startup: Cleaned up obsolete file '{file_path}'.")
+            except Exception as e:
+                print(f"Startup: Failed to remove obsolete file '{file_path}': {e}")
+
+# Run the self-healing and cleanup routines immediately before the server fully binds
+verify_and_download_core_files()
+cleanup_obsolete_files()
+
 def get_oled_dir():
     """
     Detects if the OLED Monitor script is installed on the system.
@@ -85,20 +155,6 @@ def get_local_versions():
             oled_ver = "Unknown"
             
     return wifi_ver, oled_ver
-
-def download_file(url, dest_path):
-    """
-    Securely downloads a file from a URL to a local destination using urllib.
-    Returns True on success, False if a network or writing error occurs.
-    """
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=10) as response, open(dest_path, 'wb') as out_file:
-            out_file.write(response.read())
-        return True
-    except Exception as e:
-        print(f"Error downloading {url}: {e}")
-        return False
 
 def parse_changelog(raw_markdown):
     """
@@ -270,11 +326,9 @@ def inject_global_vars():
 @app.route('/')
 def index():
     """Renders the combined SPA dashboard, passing all necessary config data."""
-    # Get Hotspot Data
     hs_config = get_hotspot_config()
     hs_policy = get_hotspot_policy()
     
-    # Get OLED Data
     oled_dir = get_oled_dir()
     current_data = "{}"
     if oled_dir:
@@ -295,6 +349,7 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    """Handles user authentication. Validates credentials and sets the session cookie."""
     if request.method == 'POST':
         user = request.form.get('username')
         pw = request.form.get('password')
@@ -308,11 +363,13 @@ def login():
 
 @app.route('/logout')
 def logout():
+    """Destroys the current user session and redirects to the login screen."""
     session.pop('logged_in', None)
     return redirect(url_for('login'))
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
+    """Handles Web Application settings (Auth credentials and Port bindings)."""
     if request.method == 'POST':
         new_user = request.form.get('username')
         new_pw = request.form.get('password')
@@ -343,11 +400,12 @@ def settings():
             </body>
             </html>
             """
-        return redirect(url_for('index'))
-    return render_template('settings.html', current_user=get_credentials()[0])
+    # Redirect GET requests safely back to the SPA index
+    return redirect(url_for('index'))
 
 @app.route('/hotspot', methods=['GET', 'POST'])
 def hotspot_page():
+    """Handles configuring, enabling/disabling, and prioritizing the Wi-Fi Hotspot."""
     if request.method == 'POST':
         action = request.form.get('action')
         force_hs = request.form.get('force_hotspot') == 'on'
@@ -378,9 +436,13 @@ def hotspot_page():
             if enable_hs: subprocess.run(['sudo', 'nmcli', 'con', 'up', profile_name])
             else: subprocess.run(['sudo', 'nmcli', 'con', 'down', profile_name])
                 
-        return redirect(url_for('hotspot_page'))
-        
-    return render_template('hotspot.html', hotspot=get_hotspot_config(), force_hotspot=get_hotspot_policy())
+    # Redirect GET requests safely back to the SPA index
+    return redirect(url_for('index'))
+
+@app.route('/oled')
+def oled_page():
+    """Safely redirects legacy OLED UI requests back to the SPA index."""
+    return redirect(url_for('index'))
 
 # ==============================================================================
 # UPDATE API ROUTES
@@ -407,21 +469,39 @@ def update_check():
                 elif line.startswith('OLED_VERSION='):
                     target_oled = line.split('=')[1].strip('\'"')
     except Exception as e:
-        return jsonify({"status": "error", "message": f"Could not reach update server: {e}"})
+        return jsonify({"status": "error", "message": "Unable to connect to GitHub. Please verify your internet connection."})
 
     # 2. Fetch & Parse WiFi Changelog
     try:
         req = urllib.request.Request(f"{REPO_BASE}/pi-wifi-app/changelog.md", headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as response:
             wifi_changelog = parse_changelog(response.read().decode('utf-8'))
-    except Exception: pass
+    except Exception as e:
+        # Gracefully handle missing/404 changelog file by injecting an error structure
+        wifi_changelog = [{
+            "version": "Error",
+            "title": "Changelog Unavailable",
+            "sections": [{
+                "subtitle": "Could not load data",
+                "bullets": [{"type": "text", "content": "The changelog file could not be retrieved from GitHub."}]
+            }]
+        }]
 
     # 3. Fetch & Parse OLED Changelog
     try:
         req = urllib.request.Request(f"{REPO_BASE}/oled_monitor/changelog.md", headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as response:
             oled_changelog = parse_changelog(response.read().decode('utf-8'))
-    except Exception: pass
+    except Exception as e:
+        # Gracefully handle missing/404 changelog file by injecting an error structure
+        oled_changelog = [{
+            "version": "Error",
+            "title": "Changelog Unavailable",
+            "sections": [{
+                "subtitle": "Could not load data",
+                "bullets": [{"type": "text", "content": "The changelog file could not be retrieved from GitHub."}]
+            }]
+        }]
 
     # Compare versions to determine update availability
     wifi_update_avail = (local_wifi != target_wifi and target_wifi != "Unknown")
@@ -449,6 +529,7 @@ def update_run():
     """
     API Endpoint: Executes the over-the-air update by downloading fresh files 
     directly from GitHub and replacing the local installations.
+    Accounts for the new Single Page Application structure by leveraging CORE_FILES.
     """
     data = request.json
     components = data.get('components', [])
@@ -470,19 +551,11 @@ def update_run():
             
     # --- Update WiFi Configurator ---
     if "wifi" in components:
-        files = [
-            ('app.py', 'app.py'),
-            ('version.json', 'version.json'),
-            ('templates/index.html', 'templates/index.html'),
-            ('templates/login.html', 'templates/login.html'),
-            ('templates/settings.html', 'templates/settings.html'),
-            ('templates/hotspot.html', 'templates/hotspot.html'),
-            ('templates/oled.html', 'templates/oled.html')
-        ]
-        for src, dest in files:
-            success = download_file(f"{REPO_BASE}/pi-wifi-app/{src}", os.path.join(script_dir, dest))
+        # Dynamically map the CORE_FILES array to prevent missing components
+        for file_path in CORE_FILES:
+            success = download_file(f"{REPO_BASE}/pi-wifi-app/{file_path}", os.path.join(script_dir, file_path))
             if not success:
-                return jsonify({"status": "error", "message": f"Failed to download WiFi file: {src}"})
+                return jsonify({"status": "error", "message": f"Failed to download WiFi file: {file_path}"})
                 
         # Schedule the web app service to restart after 2 seconds, 
         # allowing Flask to safely return the success response below first.
@@ -496,7 +569,10 @@ def update_run():
 # ==============================================================================
 @app.route('/api/system/status', methods=['GET'])
 def system_status():
-    """Returns a full JSON payload of current system variables for the OLED preview."""
+    """
+    Returns a full JSON payload of current system variables for the OLED preview.
+    Fetches real-time temperature, hotspot data, and dynamically detected ports.
+    """
     now = datetime.datetime.now()
     
     temp = 0.0
@@ -562,27 +638,12 @@ def system_status():
         'hotspot_active': hs_active
     })
 
-@app.route('/oled')
-def oled_page():
-    oled_dir = get_oled_dir()
-    if not oled_dir: return "OLED Monitor is not installed on this system.", 404
-    
-    settings_file = os.path.join(oled_dir, 'settings.json')
-    current_data = "{}"
-    if os.path.exists(settings_file):
-        try:
-            with open(settings_file, 'r') as f:
-                content = f.read()
-                content = re.sub(r'^\s*//.*$', '', content, flags=re.MULTILINE)
-                loaded = json.loads(content)
-                current_data = json.dumps(loaded)
-        except Exception:
-            current_data = "{}"
-            
-    return render_template('oled.html', current_settings=current_data)
-
 @app.route('/api/oled/save', methods=['POST'])
 def oled_save():
+    """
+    API Endpoint: Receives JSON data from the UI, validates the format, 
+    overwrites settings.json, and restarts the backend OLED service.
+    """
     oled_dir = get_oled_dir()
     if not oled_dir: return jsonify({"status":"error", "message":"OLED not installed"})
     
@@ -599,6 +660,10 @@ def oled_save():
 
 @app.route('/api/oled/reset', methods=['POST'])
 def oled_reset():
+    """
+    API Endpoint: Triggers a factory reset of the OLED settings by creating 
+    a physical 'reset' file which the OLED script detects on restart.
+    """
     oled_dir = get_oled_dir()
     if not oled_dir: return jsonify({"status":"error", "message":"OLED not installed"})
     try:
@@ -612,10 +677,16 @@ def oled_reset():
 # ==============================================================================
 @app.route('/interfaces', methods=['GET'])
 def interfaces():
+    """API Endpoint: Returns JSON metadata about available network interfaces."""
     return jsonify(get_interfaces_info())
 
 @app.route('/scan', methods=['GET'])
 def scan():
+    """
+    API Endpoint: Executes an nmcli WiFi scan on the requested network adapter.
+    Validates that the target interface is not currently running an Access Point, 
+    which would cause the scan command to fail on physical hardware.
+    """
     try:
         device = request.args.get('device')
         info = get_interfaces_info()
@@ -642,6 +713,11 @@ def scan():
 
 @app.route('/connect', methods=['POST'])
 def connect():
+    """
+    API Endpoint: Executes nmcli to connect to a specific SSID. 
+    Applies user-selected autoconnect policies after a successful connection.
+    Ensures that Hostpot priorities remain intact if they were previously forced.
+    """
     data = request.json
     ssid = data.get('ssid')
     password = data.get('password', '')
@@ -665,6 +741,7 @@ def connect():
 
 @app.route('/disconnect', methods=['POST'])
 def disconnect():
+    """API Endpoint: Gracefully disconnects the specified network adapter from its current connection."""
     try:
         device = request.json.get('device', 'wlan0')
         result = subprocess.run(['nmcli', 'dev', 'disconnect', device], capture_output=True, text=True)
@@ -673,6 +750,7 @@ def disconnect():
     except Exception as e: return jsonify({'status': 'error', 'message': str(e)})
 
 def can_bind_port(check_port):
+    """Safely checks if a requested network port is available for binding by the Flask application."""
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         s.bind(('0.0.0.0', check_port))
@@ -680,10 +758,14 @@ def can_bind_port(check_port):
         return True
     except: return False
 
+# ==============================================================================
+# MAIN EXECUTION & PORT BINDING
+# ==============================================================================
 if __name__ == '__main__':
     port = get_current_port()
     bak_port = 8080
     
+    # Read Backup port in case of binding conflicts
     try:
         if os.path.exists(port_file_path + '.bak'):
             with open(port_file_path + '.bak', 'r') as f:
@@ -691,6 +773,8 @@ if __name__ == '__main__':
                 if p.isdigit(): bak_port = int(p)
     except: pass
 
+    # Smart Port Fallback Mechanism
+    # Prevents the web server from crashing and locking out the user if they assign an invalid port.
     if not can_bind_port(port):
         print(f"Port {port} is in use or unavailable. Falling back to {bak_port}...")
         port = bak_port
