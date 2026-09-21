@@ -5,6 +5,9 @@ import re
 import json
 import glob
 import socket
+import datetime
+import urllib.request
+from urllib.error import URLError
 from datetime import timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -12,22 +15,34 @@ app = Flask(__name__)
 app.secret_key = os.urandom(24)
 app.permanent_session_lifetime = timedelta(days=365)
 
+# ==============================================================================
+# FILE PATH & REPOSITORY CONFIGURATIONS
+# ==============================================================================
 script_dir = os.path.dirname(os.path.abspath(__file__))
 user_file = os.path.join(script_dir, 'user')
 reset_file = os.path.join(script_dir, 'reset')
 port_file_path = os.path.join(script_dir, 'webport')
 hotspot_policy_file = os.path.join(script_dir, 'hotspot_policy')
+local_wifi_version_file = os.path.join(script_dir, 'version.json')
+
+REPO_BASE = "https://raw.githubusercontent.com/Chrisb003/pi-wifi-and-hotspot-configurator/main"
 
 def get_oled_dir():
-    """Detects if the OLED Monitor script is installed by locating its directory."""
+    """
+    Detects if the OLED Monitor script is installed on the system.
+    Scans the home directories and root for the 'oled_monitor' folder.
+    Returns the absolute path if found, otherwise None.
+    """
     for d in glob.glob('/home/*/oled_monitor'):
         if os.path.isdir(d): return d
     if os.path.isdir('/root/oled_monitor'): return '/root/oled_monitor'
     return None
 
-# ==========================================
+# ==============================================================================
 # STARTUP RESET LOGIC
-# ==========================================
+# ==============================================================================
+# If a physical file named 'reset' is found in the app directory on startup,
+# delete the user credentials file to restore open access, then remove the trigger file.
 if os.path.exists(reset_file):
     try:
         if os.path.exists(user_file): os.remove(user_file)
@@ -36,6 +51,99 @@ if os.path.exists(reset_file):
     except Exception as e:
         print(f"Startup: Error resetting user: {e}")
 
+# ==============================================================================
+# UPDATE & VERSIONING FUNCTIONS
+# ==============================================================================
+def get_local_versions():
+    """
+    Reads the local version.json files for both the WiFi App and the OLED Monitor.
+    Returns a tuple: (wifi_version, oled_version). Missing components return 'Not Installed'.
+    """
+    wifi_ver = "Unknown"
+    oled_ver = "Not Installed"
+    
+    # Check WiFi App Version
+    if os.path.exists(local_wifi_version_file):
+        try:
+            with open(local_wifi_version_file, 'r') as f:
+                data = json.load(f)
+                wifi_ver = data.get("version", "Unknown")
+        except Exception: pass
+        
+    # Check OLED Monitor Version
+    oled_dir = get_oled_dir()
+    if oled_dir:
+        oled_ver_file = os.path.join(oled_dir, 'version.json')
+        if os.path.exists(oled_ver_file):
+            try:
+                with open(oled_ver_file, 'r') as f:
+                    data = json.load(f)
+                    oled_ver = data.get("version", "Unknown")
+            except Exception:
+                oled_ver = "Unknown"
+        else:
+            oled_ver = "Unknown"
+            
+    return wifi_ver, oled_ver
+
+def download_file(url, dest_path):
+    """
+    Securely downloads a file from a URL to a local destination using urllib.
+    Returns True on success, False if a network or writing error occurs.
+    """
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response, open(dest_path, 'wb') as out_file:
+            out_file.write(response.read())
+        return True
+    except Exception as e:
+        print(f"Error downloading {url}: {e}")
+        return False
+
+def parse_changelog(raw_markdown):
+    """
+    Parses the custom changelog Markdown format into a structured Python dictionary.
+    Handles Release Titles (##), Subtitles (**), and Bullet points (*).
+    Empty bullet points ('* ') are converted to line space elements.
+    """
+    releases = []
+    current_release = None
+    current_section = None
+    
+    for line in raw_markdown.splitlines():
+        line = line.strip()
+        if not line: continue
+        
+        # Parse Release Header: "## [1.0.20] - webport file"
+        if line.startswith('## '):
+            match = re.match(r'##\s*\[(.*?)\]\s*-\s*(.*)', line)
+            version = match.group(1) if match else "Unknown"
+            title = match.group(2) if match else line.replace('## ', '')
+            current_release = {"version": version, "title": title, "sections": []}
+            releases.append(current_release)
+            current_section = None
+            
+        # Parse Subtitle Header: "** Main App Script 1.0.15 -"
+        elif line.startswith('** '):
+            if current_release is not None:
+                subtitle = line.replace('** ', '').strip()
+                current_section = {"subtitle": subtitle, "bullets": []}
+                current_release["sections"].append(current_section)
+                
+        # Parse Bullet Points or Spaces: "* bullet text" or "* "
+        elif line.startswith('*'):
+            if current_section is not None:
+                bullet_content = line[1:].strip()
+                if bullet_content == "":
+                    current_section["bullets"].append({"type": "space"})
+                else:
+                    current_section["bullets"].append({"type": "text", "content": bullet_content})
+                    
+    return releases
+
+# ==============================================================================
+# HELPER FUNCTIONS
+# ==============================================================================
 def get_credentials():
     """Retrieves the currently saved username and hashed password from the user file."""
     if os.path.exists(user_file):
@@ -44,8 +152,19 @@ def get_credentials():
             if ':' in content: return content.split(':', 1)
     return None, None
 
+def get_file_port(glob_pattern, default=""):
+    """Searches the system to locate specific 'webport' configuration files."""
+    try:
+        files = glob.glob(glob_pattern)
+        if files:
+            with open(files[0], 'r') as f:
+                val = f.read().strip()
+                if val: return val
+    except Exception: pass
+    return default
+
 def get_current_port():
-    """Reads the active webport file to determine which port the app should bind to."""
+    """Reads the active webport file for this specific Wi-Fi app."""
     try:
         if os.path.exists(port_file_path):
             with open(port_file_path, 'r') as f:
@@ -55,11 +174,7 @@ def get_current_port():
     return 8080
 
 def get_interfaces_info():
-    """
-    Uses nmcli to detect all active network interfaces and identifies if any 
-    of them are currently broadcasting a Hotspot (Access Point mode).
-    Returns a list of interfaces and a safe default interface.
-    """
+    """Uses nmcli to detect all active network interfaces and identifies if any are broadcasting an AP."""
     try:
         res = subprocess.run(['nmcli', '-t', '-f', 'DEVICE,TYPE,STATE,CONNECTION', 'dev'], capture_output=True, text=True)
         interfaces = []
@@ -82,11 +197,10 @@ def get_interfaces_info():
         
         if not default_iface and interfaces: default_iface = interfaces[0]['name']
         return {'interfaces': interfaces, 'default': default_iface}
-    except Exception:
-        return {'interfaces': [], 'default': ''}
+    except Exception: return {'interfaces': [], 'default': ''}
 
 def get_hotspot_policy():
-    """Reads the user's saved policy on whether Hotspots should persist on boot with high priority."""
+    """Reads the user's saved policy on whether the Hotspot should automatically persist on boot."""
     if os.path.exists(hotspot_policy_file):
         with open(hotspot_policy_file, 'r') as f: return f.read().strip() == 'true'
     info = get_interfaces_info()
@@ -107,8 +221,8 @@ def set_hotspot_priority(priority):
                 subprocess.run(['nmcli', 'con', 'modify', name, 'connection.autoconnect', 'yes', 'connection.autoconnect-priority', str(priority)])
 
 def get_hotspot_config():
-    """Detects existing NetworkManager Hotspot connection profile name, SSID, and Password."""
-    hs_name, hs_ssid, hs_psk, hs_active = "Hotspot", "", "", False
+    """Detects existing NetworkManager Hotspot connection profiles and fetches credentials."""
+    hs_name, hs_ssid, hs_psk, hs_active, hs_iface = "Hotspot", "", "", False, ""
     try:
         res = subprocess.run(['nmcli', '-t', '-f', 'NAME,TYPE', 'con', 'show'], capture_output=True, text=True)
         for line in res.stdout.splitlines():
@@ -120,38 +234,67 @@ def get_hotspot_config():
                     hs_ssid = subprocess.run(['nmcli', '-g', '802-11-wireless.ssid', 'con', 'show', name], capture_output=True, text=True).stdout.strip()
                     psk_res = subprocess.run(['sudo', 'nmcli', '--show-secrets', '-g', '802-11-wireless-security.psk', 'con', 'show', name], capture_output=True, text=True)
                     hs_psk = psk_res.stdout.strip()
+                    iface_res = subprocess.run(['nmcli', '-g', 'connection.interface-name', 'con', 'show', name], capture_output=True, text=True)
+                    hs_iface = iface_res.stdout.strip()
                     active_res = subprocess.run(['nmcli', '-t', '-f', 'NAME', 'con', 'show', '--active'], capture_output=True, text=True)
-                    if hs_name in active_res.stdout:
-                        hs_active = True
+                    if hs_name in active_res.stdout: hs_active = True
                     break
-    except Exception:
-        pass
-    return {'name': hs_name, 'ssid': hs_ssid, 'password': hs_psk, 'active': hs_active}
+    except Exception: pass
+    return {'name': hs_name, 'ssid': hs_ssid, 'password': hs_psk, 'active': hs_active, 'iface': hs_iface}
 
+# ==============================================================================
+# FLASK MIDDLEWARE & CONTEXT
+# ==============================================================================
 @app.before_request
 def check_auth():
-    """Middleware: Validates login status before allowing access to private application routes."""
+    """Security Middleware: Blocks access to routes without a valid session."""
     if os.path.exists(user_file):
         if request.endpoint not in ['login', 'static'] and not session.get('logged_in'):
             return redirect(url_for('login'))
 
 @app.context_processor
 def inject_global_vars():
-    """Injects globally accessible state variables into all Jinja2 templates."""
+    """Injects globally accessible state and version variables into all Jinja2 HTML templates."""
+    local_wifi, local_oled = get_local_versions()
     return {
         'auth_enabled': os.path.exists(user_file),
         'oled_installed': get_oled_dir() is not None,
-        'current_port': get_current_port()
+        'current_port': get_current_port(),
+        'local_wifi_version': local_wifi,
+        'local_oled_version': local_oled
     }
 
+# ==============================================================================
+# WEB APPLICATION ROUTES
+# ==============================================================================
 @app.route('/')
 def index():
-    """Renders the main WiFi Configuration dashboard."""
-    return render_template('index.html')
+    """Renders the combined SPA dashboard, passing all necessary config data."""
+    # Get Hotspot Data
+    hs_config = get_hotspot_config()
+    hs_policy = get_hotspot_policy()
+    
+    # Get OLED Data
+    oled_dir = get_oled_dir()
+    current_data = "{}"
+    if oled_dir:
+        settings_file = os.path.join(oled_dir, 'settings.json')
+        if os.path.exists(settings_file):
+            try:
+                with open(settings_file, 'r') as f:
+                    content = f.read()
+                    content = re.sub(r'^\s*//.*$', '', content, flags=re.MULTILINE)
+                    loaded = json.loads(content)
+                    current_data = json.dumps(loaded)
+            except Exception: pass
+            
+    return render_template('index.html', 
+                           hotspot=hs_config, 
+                           force_hotspot=hs_policy,
+                           current_settings=current_data)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    """Handles user authentication. Validates credentials and sets the permanent secure session cookie."""
     if request.method == 'POST':
         user = request.form.get('username')
         pw = request.form.get('password')
@@ -165,13 +308,11 @@ def login():
 
 @app.route('/logout')
 def logout():
-    """Destroys the current user session and redirects to the login screen."""
     session.pop('logged_in', None)
     return redirect(url_for('login'))
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
-    """Handles Web Application settings (Auth credentials and Port bindings)."""
     if request.method == 'POST':
         new_user = request.form.get('username')
         new_pw = request.form.get('password')
@@ -198,27 +339,21 @@ def settings():
             <body style='font-family:sans-serif; text-align:center; margin-top:50px; background:#121212; color:white;'>
                 <h2>Changing Port to {port_changed_to}...</h2>
                 <p>Please wait while the service restarts. You will be redirected automatically.</p>
-                <script>
-                    setTimeout(() => {{
-                        window.location.href = window.location.protocol + '//' + window.location.hostname + ':{port_changed_to}/';
-                    }}, 3500);
-                </script>
+                <script>setTimeout(() => {{ window.location.href = window.location.protocol + '//' + window.location.hostname + ':{port_changed_to}/'; }}, 3500);</script>
             </body>
             </html>
             """
-            
         return redirect(url_for('index'))
     return render_template('settings.html', current_user=get_credentials()[0])
 
 @app.route('/hotspot', methods=['GET', 'POST'])
 def hotspot_page():
-    """Handles configuring, enabling/disabling, and prioritizing the Wi-Fi Hotspot."""
     if request.method == 'POST':
         action = request.form.get('action')
         force_hs = request.form.get('force_hotspot') == 'on'
+        device = request.form.get('device')
         
-        with open(hotspot_policy_file, 'w') as f:
-            f.write('true' if force_hs else 'false')
+        with open(hotspot_policy_file, 'w') as f: f.write('true' if force_hs else 'false')
         set_hotspot_priority(100 if force_hs else 0)
         
         hs_info = get_hotspot_config()
@@ -229,33 +364,206 @@ def hotspot_page():
             new_pass = request.form.get('password')
             enable_hs = request.form.get('enable_hotspot') == 'on'
             
-            if new_ssid:
-                subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless.ssid', new_ssid])
-            if new_pass and len(new_pass) >= 8:
-                subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless-security.key-mgmt', 'wpa-psk', '802-11-wireless-security.psk', new_pass])
-                
+            check_exists = subprocess.run(['nmcli', '-t', '-f', 'NAME', 'con', 'show', profile_name], capture_output=True, text=True)
+            if profile_name not in check_exists.stdout:
+                if not device: device = 'wlan0'
+                subprocess.run(['sudo', 'nmcli', 'con', 'add', 'type', 'wifi', 'ifname', device, 'con-name', profile_name, 'autoconnect', 'no', 'ssid', new_ssid])
+                subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless.mode', 'ap', '802-11-wireless.band', 'bg', 'ipv4.method', 'shared'])
+            else:
+                if device: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, 'connection.interface-name', device])
+
+            if new_ssid: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless.ssid', new_ssid])
+            if new_pass and len(new_pass) >= 8: subprocess.run(['sudo', 'nmcli', 'con', 'modify', profile_name, '802-11-wireless-security.key-mgmt', 'wpa-psk', '802-11-wireless-security.psk', new_pass])
+            
             if enable_hs: subprocess.run(['sudo', 'nmcli', 'con', 'up', profile_name])
             else: subprocess.run(['sudo', 'nmcli', 'con', 'down', profile_name])
                 
         return redirect(url_for('hotspot_page'))
         
-    hs_data = get_hotspot_config()
-    force_hotspot = get_hotspot_policy()
-    return render_template('hotspot.html', hotspot=hs_data, force_hotspot=force_hotspot)
+    return render_template('hotspot.html', hotspot=get_hotspot_config(), force_hotspot=get_hotspot_policy())
 
-@app.route('/api/system/temp', methods=['GET'])
-def system_temp():
-    """Returns the current internal hardware CPU temperature of the Raspberry Pi."""
+# ==============================================================================
+# UPDATE API ROUTES
+# ==============================================================================
+@app.route('/api/update/check', methods=['GET'])
+def update_check():
+    """
+    API Endpoint: Gathers local versioning info, requests the latest target versions 
+    from GitHub, downloads the changelog markdown files, parses them, and returns 
+    a comprehensive JSON payload for the frontend UI to display.
+    """
+    local_wifi, local_oled = get_local_versions()
+    target_wifi, target_oled = "Unknown", "Unknown"
+    wifi_changelog, oled_changelog = [], []
+    
+    # 1. Fetch Version File
+    try:
+        req = urllib.request.Request(f"{REPO_BASE}/version", headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            version_text = response.read().decode('utf-8')
+            for line in version_text.splitlines():
+                if line.startswith('WIFI_VERSION='):
+                    target_wifi = line.split('=')[1].strip('\'"')
+                elif line.startswith('OLED_VERSION='):
+                    target_oled = line.split('=')[1].strip('\'"')
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Could not reach update server: {e}"})
+
+    # 2. Fetch & Parse WiFi Changelog
+    try:
+        req = urllib.request.Request(f"{REPO_BASE}/pi-wifi-app/changelog.md", headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            wifi_changelog = parse_changelog(response.read().decode('utf-8'))
+    except Exception: pass
+
+    # 3. Fetch & Parse OLED Changelog
+    try:
+        req = urllib.request.Request(f"{REPO_BASE}/oled_monitor/changelog.md", headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            oled_changelog = parse_changelog(response.read().decode('utf-8'))
+    except Exception: pass
+
+    # Compare versions to determine update availability
+    wifi_update_avail = (local_wifi != target_wifi and target_wifi != "Unknown")
+    oled_update_avail = (local_oled != "Not Installed" and local_oled != target_oled and target_oled != "Unknown")
+
+    return jsonify({
+        "status": "success",
+        "wifi": {
+            "local_version": local_wifi,
+            "target_version": target_wifi,
+            "update_available": wifi_update_avail,
+            "changelog": wifi_changelog
+        },
+        "oled": {
+            "installed": local_oled != "Not Installed",
+            "local_version": local_oled,
+            "target_version": target_oled,
+            "update_available": oled_update_avail,
+            "changelog": oled_changelog
+        }
+    })
+
+@app.route('/api/update/run', methods=['POST'])
+def update_run():
+    """
+    API Endpoint: Executes the over-the-air update by downloading fresh files 
+    directly from GitHub and replacing the local installations.
+    """
+    data = request.json
+    components = data.get('components', [])
+    
+    if not components:
+        return jsonify({"status": "error", "message": "No components selected for update."})
+        
+    # --- Update OLED Monitor ---
+    if "oled" in components:
+        oled_dir = get_oled_dir()
+        if oled_dir:
+            files = [('monitor.py', 'monitor.py'), ('version.json', 'version.json')]
+            for src, dest in files:
+                success = download_file(f"{REPO_BASE}/oled_monitor/{src}", os.path.join(oled_dir, dest))
+                if not success:
+                    return jsonify({"status": "error", "message": f"Failed to download OLED file: {src}"})
+            # Restart OLED immediately (it runs in background, won't break web server)
+            subprocess.run(['systemctl', 'restart', 'oled_monitor.service'])
+            
+    # --- Update WiFi Configurator ---
+    if "wifi" in components:
+        files = [
+            ('app.py', 'app.py'),
+            ('version.json', 'version.json'),
+            ('templates/index.html', 'templates/index.html'),
+            ('templates/login.html', 'templates/login.html'),
+            ('templates/settings.html', 'templates/settings.html'),
+            ('templates/hotspot.html', 'templates/hotspot.html'),
+            ('templates/oled.html', 'templates/oled.html')
+        ]
+        for src, dest in files:
+            success = download_file(f"{REPO_BASE}/pi-wifi-app/{src}", os.path.join(script_dir, dest))
+            if not success:
+                return jsonify({"status": "error", "message": f"Failed to download WiFi file: {src}"})
+                
+        # Schedule the web app service to restart after 2 seconds, 
+        # allowing Flask to safely return the success response below first.
+        subprocess.Popen(['/bin/sh', '-c', 'sleep 2 && systemctl restart pi-wifi-app.service'])
+
+    return jsonify({"status": "success", "message": "Update completed successfully. Services are restarting."})
+
+
+# ==============================================================================
+# SYSTEM & OLED API ROUTES
+# ==============================================================================
+@app.route('/api/system/status', methods=['GET'])
+def system_status():
+    """Returns a full JSON payload of current system variables for the OLED preview."""
+    now = datetime.datetime.now()
+    
+    temp = 0.0
     try:
         out = subprocess.check_output(['vcgencmd', 'measure_temp'], stderr=subprocess.DEVNULL).decode('utf-8')
         temp = float(out.replace('temp=', '').replace('\'C\n', ''))
-        return jsonify({'temp': temp})
-    except Exception:
-        return jsonify({'temp': 0.0})
+    except Exception: pass
+
+    hs_active = False
+    ap_ssid = ""
+    ap_psk = ""
+    ap_iface = None
+    wifi_ssid = ""
+    try:
+        active_conns = subprocess.check_output(['nmcli', '-t', '-f', 'NAME,TYPE', 'connection', 'show', '--active'], stderr=subprocess.DEVNULL).decode('utf-8').split('\n')
+        for conn in active_conns:
+            if 'wireless' in conn or '802-11-wireless' in conn:
+                name = conn.split(':')[0]
+                mode = subprocess.check_output(['nmcli', '-g', '802-11-wireless.mode', 'connection', 'show', name], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+                if mode == 'ap':
+                    hs_active = True
+                    ap_ssid = subprocess.check_output(['nmcli', '-g', '802-11-wireless.ssid', 'connection', 'show', name], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+                    ap_psk = subprocess.check_output(['sudo', 'nmcli', '--show-secrets', '-g', '802-11-wireless-security.psk', 'connection', 'show', name], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+                    ap_iface = subprocess.check_output(['nmcli', '-g', 'GENERAL.DEVICES', 'connection', 'show', name], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+                elif mode == 'infrastructure':
+                    wifi_ssid = subprocess.check_output(['nmcli', '-g', '802-11-wireless.ssid', 'connection', 'show', name], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+    except Exception: pass
+
+    networks = []
+    ap_ip = "10.42.0.1"
+    try:
+        out = subprocess.check_output(['ip', '-o', '-4', 'addr', 'show'], stderr=subprocess.DEVNULL).decode('utf-8')
+        for line in out.split('\n'):
+            if line.strip():
+                parts = line.split()
+                iface = parts[1]
+                ip = parts[3].split('/')[0]
+                if iface != "lo" and not iface.startswith("docker") and not iface.startswith("veth"):
+                    networks.append((iface, ip))
+                    if iface == ap_iface: ap_ip = ip
+    except Exception: pass
+
+    wifi_port = str(get_current_port())
+    diag_port = str(get_file_port('/home/*/Network-Testing-Tools/webport', default=""))
+
+    return jsonify({
+        'time': now.strftime("%H:%M:%S"),
+        'hour': now.strftime("%H"),
+        'minute': now.strftime("%M"),
+        'second': now.strftime("%S"),
+        'date': now.strftime("%Y-%m-%d"),
+        'day': now.strftime("%d"),
+        'month': now.strftime("%m"),
+        'year': now.strftime("%Y"),
+        'temp': temp,
+        'ap_ssid': ap_ssid if hs_active else "",
+        'ap_pw': ap_psk if hs_active else "",
+        'ap_ip': ap_ip,
+        'wifi_ssid': wifi_ssid if wifi_ssid else "Not Connected",
+        'wifi_port': wifi_port,
+        'diag_port': diag_port,
+        'web_port': wifi_port,
+        'hotspot_active': hs_active
+    })
 
 @app.route('/oled')
 def oled_page():
-    """Renders the OLED Configuration UI, dynamically loading settings.json from the oled_monitor directory."""
     oled_dir = get_oled_dir()
     if not oled_dir: return "OLED Monitor is not installed on this system.", 404
     
@@ -275,7 +583,6 @@ def oled_page():
 
 @app.route('/api/oled/save', methods=['POST'])
 def oled_save():
-    """API Endpoint: Receives JSON data from the UI, validates it, overwrites settings.json, and restarts the OLED service."""
     oled_dir = get_oled_dir()
     if not oled_dir: return jsonify({"status":"error", "message":"OLED not installed"})
     
@@ -285,35 +592,37 @@ def oled_save():
         
     settings_file = os.path.join(oled_dir, 'settings.json')
     try:
-        with open(settings_file, 'w') as f:
-            json.dump(data, f, indent=4)
+        with open(settings_file, 'w') as f: json.dump(data, f, indent=4)
         subprocess.run(['systemctl', 'restart', 'oled_monitor.service'])
         return jsonify({"status":"success", "message":"Settings Saved & Service Restarted"})
-    except Exception as e:
-        return jsonify({"status":"error", "message":str(e)})
+    except Exception as e: return jsonify({"status":"error", "message":str(e)})
 
 @app.route('/api/oled/reset', methods=['POST'])
 def oled_reset():
-    """API Endpoint: Triggers a factory reset of the OLED settings by creating a physical 'reset' file."""
     oled_dir = get_oled_dir()
     if not oled_dir: return jsonify({"status":"error", "message":"OLED not installed"})
     try:
         open(os.path.join(oled_dir, 'reset'), 'w').close()
         subprocess.run(['systemctl', 'restart', 'oled_monitor.service'])
         return jsonify({"status":"success", "message":"Settings Reset to Defaults"})
-    except Exception as e:
-        return jsonify({"status":"error", "message":str(e)})
+    except Exception as e: return jsonify({"status":"error", "message":str(e)})
 
+# ==============================================================================
+# WIFI API ROUTES
+# ==============================================================================
 @app.route('/interfaces', methods=['GET'])
 def interfaces():
-    """API Endpoint: Returns JSON metadata about available network interfaces."""
     return jsonify(get_interfaces_info())
 
 @app.route('/scan', methods=['GET'])
 def scan():
-    """API Endpoint: Executes an nmcli WiFi scan on the requested network adapter and returns a list of SSIDs."""
     try:
         device = request.args.get('device')
+        info = get_interfaces_info()
+        for iface in info['interfaces']:
+            if (not device or iface['name'] == device) and iface['is_hotspot']:
+                return jsonify({'status': 'error', 'message': f'Cannot scan: Interface {iface["name"]} is running a Hotspot. Disable it first.'})
+                
         cmd = ['nmcli', '-t', '-f', 'SSID,SIGNAL', 'dev', 'wifi']
         if device: cmd.extend(['ifname', device])
             
@@ -329,12 +638,10 @@ def scan():
                         seen.add(ssid)
                         networks.append({'ssid': ssid, 'signal': signal})
         return jsonify({'networks': networks, 'status': 'success'})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)})
+    except Exception as e: return jsonify({'status': 'error', 'message': str(e)})
 
 @app.route('/connect', methods=['POST'])
 def connect():
-    """API Endpoint: Executes nmcli to connect to a specific SSID. Applies autoconnect policies after success."""
     data = request.json
     ssid = data.get('ssid')
     password = data.get('password', '')
@@ -353,13 +660,11 @@ def connect():
             subprocess.run(['nmcli', 'con', 'modify', ssid, 'connection.autoconnect', ac_val, 'connection.autoconnect-priority', '0'])
             if get_hotspot_policy(): set_hotspot_priority(100)
             return jsonify({'status': 'success', 'message': f'Successfully connected to {ssid}.'})
-        else:
-            return jsonify({'status': 'error', 'message': result.stderr.strip()})
+        else: return jsonify({'status': 'error', 'message': result.stderr.strip()})
     except Exception as e: return jsonify({'status': 'error', 'message': str(e)})
 
 @app.route('/disconnect', methods=['POST'])
 def disconnect():
-    """API Endpoint: Gracefully disconnects the specified network adapter from its current connection."""
     try:
         device = request.json.get('device', 'wlan0')
         result = subprocess.run(['nmcli', 'dev', 'disconnect', device], capture_output=True, text=True)
@@ -368,14 +673,12 @@ def disconnect():
     except Exception as e: return jsonify({'status': 'error', 'message': str(e)})
 
 def can_bind_port(check_port):
-    """Safely checks if a requested port is available for binding by the Flask application."""
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
         s.bind(('0.0.0.0', check_port))
         s.close()
         return True
-    except:
-        return False
+    except: return False
 
 if __name__ == '__main__':
     port = get_current_port()
@@ -396,8 +699,7 @@ if __name__ == '__main__':
             port = 8080
             
         try:
-            with open(port_file_path, 'w') as f:
-                f.write(str(port))
+            with open(port_file_path, 'w') as f: f.write(str(port))
         except: pass
 
     print(f"Starting web server on port {port}...")

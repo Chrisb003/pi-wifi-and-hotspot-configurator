@@ -3,181 +3,235 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Raspberry Pi WiFi Setup</title>
-    <style>
-        :root { --bg-color: #121212; --container-bg: #1e1e1e; --text-color: #ffffff; --input-bg: #2d2d2d; --input-border: #444; --link-color: #ff4d79; }
-        body.light-mode { --bg-color: #f0f2f5; --container-bg: #ffffff; --text-color: #333333; --input-bg: #ffffff; --input-border: #ddd; --link-color: #e60042; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; display: flex; justify-content: center; transition: background-color 0.3s, color 0.3s; }
-        .container { background: var(--container-bg); padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); width: 100%; max-width: 400px; transition: background-color 0.3s; }
-        h2 { text-align: center; margin-top: 0; }
-        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 14px; }
-        .top-bar a { color: var(--link-color); text-decoration: none; font-weight: bold; }
-        .theme-toggle { background: transparent; color: var(--text-color); border: 1px solid var(--input-border); padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: 0.3s; margin-right: 10px;}
-        .theme-toggle:hover { background: var(--input-bg); }
-        .primary-btn { background: #e60042; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; margin-bottom: 15px; transition: background 0.3s; }
-        .primary-btn:hover { background: #bf0037; }
-        .primary-btn:disabled { background: #555; color: #888; cursor: not-allowed; }
-        .secondary-btn { background: #444; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; margin-bottom: 15px; transition: background 0.3s; }
-        .secondary-btn:hover { background: #555; }
-        body.light-mode .secondary-btn { background: #6c757d; }
-        body.light-mode .secondary-btn:hover { background: #5a6268; }
-        select, input[type="password"], input[type="text"] { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); border-radius: 6px; box-sizing: border-box; font-size: 16px; }
-        .hidden { display: none; }
-        #message { padding: 12px; border-radius: 6px; text-align: center; font-size: 14px; margin-bottom: 15px;}
-        .success { background-color: #1e4620; color: #a5d6a7; border: 1px solid #2e7d32; }
-        body.light-mode .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .error { background-color: #4a141c; color: #ffb3b8; border: 1px solid #8e0015; }
-        body.light-mode .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .checkbox-label { display: flex; align-items: center; font-size: 14px; margin-bottom: 15px; cursor: pointer; }
-        .checkbox-label input { width: auto; margin: 0 10px 0 0; cursor: pointer; }
-        .warning-box { background-color: #3a2a00; color: #ffcc00; border: 1px solid #b38f00; padding: 10px; border-radius: 6px; font-size: 13px; margin-bottom: 15px; text-align: left; }
-        body.light-mode .warning-box { background-color: #fff3cd; color: #856404; border-color: #ffeeba; }
-    </style>
+    <title>Raspberry Pi Manager</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <!-- Pass backend variables directly to the external JS script securely -->
+    <script>
+        window.OLED_INSTALLED = {{ 'true' if oled_installed else 'false' }};
+        window.HOTSPOT_IFACE = "{{ hotspot.iface if hotspot else '' }}";
+        window.OLED_SETTINGS_JSON = {{ current_settings|default('{}')|safe }};
+    </script>
 </head>
 <body>
     <script>if (localStorage.getItem('theme') === 'light') document.body.classList.add('light-mode');</script>
-    <div class="container">
+    
+    <!-- Timeout Overlay -->
+    <div id="timeoutOverlay" class="modal-overlay" onclick="resetInactivityTimer()">
+        <h1>Session Inactive</h1>
+        <p>You have been idle for 30 minutes. Click anywhere to resume.</p>
+    </div>
+
+    <!-- Update Checker Modal -->
+    <div id="updateModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="margin:0;">System Updates</h3>
+                <button class="btn-danger" onclick="closeModal()" style="padding: 6px 12px; font-weight: bold;">✕</button>
+            </div>
+            <div class="modal-body" id="updateBody"></div>
+            <div class="modal-footer">
+                <button class="btn primary-btn" id="runUpdateBtn" style="width: auto; margin:0; display:none;">Install Updates</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-wrapper">
+        <!-- Unified Top Navigation -->
         <div class="top-bar">
-            <div>Pi WiFi Manager</div>
-            <div style="display:flex; align-items:center;">
+            <div class="brand">Pi Manager</div>
+            <div class="nav-links" style="display:flex; align-items:center;">
                 <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()">☀️ Light</button>
-                <a href="/hotspot" style="margin-right:10px;">Hotspot</a>
-                {% if oled_installed %}<a href="/oled" style="margin-right:10px;">OLED</a>{% endif %}
-                <a href="/settings">Settings</a>
+                <a id="nav-wifi" onclick="showSection('wifi')">WiFi</a>
+                <a id="nav-hotspot" onclick="showSection('hotspot')">Hotspot</a>
+                {% if oled_installed %}<a id="nav-oled" onclick="showSection('oled')">OLED Display</a>{% endif %}
+                <a id="nav-settings" onclick="showSection('settings')">Settings</a>
                 {% if auth_enabled %}&nbsp;|&nbsp; <a href="/logout">Logout</a>{% endif %}
             </div>
         </div>
         
-        <select id="interfaceSelect" onchange="checkWarning()"></select>
-        <div id="hotspotWarning" class="hidden warning-box">
-            ⚠️ <b>Note:</b> Connecting to a WiFi network on this adapter will temporarily disable your active Hotspot.
+        <!-- SECTION: WIFI SCANNER -->
+        <div id="section-wifi" class="nav-section container narrow-container">
+            <select id="wifiInterfaceSelect" onchange="checkWarning()"></select>
+            <div id="hotspotWarning" class="hidden warning-box">
+                ⚠️ <b>Note:</b> Connecting to a WiFi network on this adapter will temporarily disable your active Hotspot.
+            </div>
+
+            <h2>WiFi Configurator</h2>
+            <button id="scanBtn" class="btn primary-btn" onclick="scanNetworks()">Search for WiFi Networks</button>
+            
+            <div id="connectForm" class="hidden">
+                <select id="ssidSelect"><option value="">Select a network...</option></select>
+                <input type="password" id="password" placeholder="Password (leave empty if known/open)">
+                <label class="checkbox-label"><input type="checkbox" id="autoconnect" checked> Auto-connect in the future</label>
+                <button id="connectBtn" class="btn primary-btn" onclick="connectNetwork()">Connect</button>
+            </div>
+            
+            <button id="disconnectBtn" class="btn secondary-btn" onclick="disconnectNetwork()">Disconnect Current WiFi</button>
+            <div id="wifiMsg" class="hidden"></div>
         </div>
 
-        <h2>WiFi Configurator</h2>
-        <button id="scanBtn" class="primary-btn" onclick="scanNetworks()">Search for WiFi Networks</button>
-        
-        <div id="connectForm" class="hidden">
-            <select id="ssidSelect"><option value="">Select a network...</option></select>
-            <input type="password" id="password" placeholder="Password (leave empty if known/open)">
-            <label class="checkbox-label"><input type="checkbox" id="autoconnect" checked> Auto-connect in the future</label>
-            <button id="connectBtn" class="primary-btn" onclick="connectNetwork()">Connect</button>
+        <!-- SECTION: HOTSPOT MANAGER -->
+        <div id="section-hotspot" class="nav-section container narrow-container">
+            <h2 style="margin-top: 0;">Hotspot Manager</h2>
+            <form action="/hotspot" method="POST">
+                <input type="hidden" name="action" value="save_and_toggle">
+                
+                <label class="checkbox-label" style="font-weight: bold;">
+                    <input type="checkbox" name="enable_hotspot" {% if hotspot and hotspot.active %}checked{% endif %}>
+                    Enable Access Point (Hotspot)
+                </label>
+                <label class="checkbox-label" style="font-weight: bold;">
+                    <input type="checkbox" name="force_hotspot" {% if force_hotspot %}checked{% endif %}>
+                    Force Hotspot to start on boot (High Priority)
+                </label>
+                <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 20px 0;">
+                
+                <label id="ifaceLabel" style="font-size:14px; font-weight:bold;">Bind to Interface</label>
+                <select name="device" id="hotspotInterfaceSelect"></select>
+                
+                <label style="font-size:14px; font-weight:bold;">Hotspot SSID (Name)</label>
+                <input type="text" name="ssid" value="{{ hotspot.ssid if hotspot else '' }}" required>
+                
+                <label style="font-size:14px; font-weight:bold;">Hotspot Password (min 8 chars)</label>
+                <input type="password" name="password" value="{{ hotspot.password if hotspot else '' }}" required>
+                
+                <button type="submit" class="btn primary-btn">Save & Apply Hotspot</button>
+            </form>
         </div>
-        
-        <button id="disconnectBtn" class="secondary-btn" onclick="disconnectNetwork()">Disconnect Current WiFi</button>
-        <div id="message" class="hidden"></div>
+
+        <!-- SECTION: WEB SETTINGS -->
+        <div id="section-settings" class="nav-section container narrow-container">
+            <h2 style="margin-top: 0;">Web Settings</h2>
+            <form action="/settings" method="POST">
+                <div style="font-size: 13px; color: var(--info-text); margin-bottom: 15px;">
+                    Leave fields below blank to keep existing web login credentials.
+                </div>
+                <label style="font-size:14px; font-weight:bold;">Username</label>
+                <input type="text" name="username" placeholder="New Username" value="{{ current_user or '' }}">
+                <label style="font-size:14px; font-weight:bold;">Password</label>
+                <input type="password" name="password" placeholder="New Password">
+                
+                <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 20px 0;">
+                <label style="font-size:14px; font-weight:bold;">Web Port</label>
+                <input type="number" name="port" value="{{ current_port }}" required>
+                
+                <button type="submit" class="btn primary-btn">Save Settings</button>
+            </form>
+
+            <!-- NEW: Check for Updates Button -->
+            <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 20px 0;">
+            <h3 style="margin-top: 0; font-size: 15px; color: var(--text-color);">System Updates</h3>
+            <p style="font-size: 13px; color: var(--info-text); margin-top: 0; margin-bottom: 15px;">
+                Check GitHub for the latest features and bug fixes.
+            </p>
+            <button class="btn secondary-btn" onclick="checkForUpdates()" style="margin-bottom: 0;">Check for Updates</button>
+        </div>
+
+        <!-- SECTION: OLED CONFIGURATOR -->
+        {% if oled_installed %}
+        <div id="section-oled" class="nav-section grid">
+            <!-- Global Settings Panel -->
+            <div class="panel">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2 style="margin: 0;">Global Settings</h2>
+                    <span id="liveTemp" class="live-badge">Pi: --.-°C</span>
+                </div>
+                
+                <h3 style="margin-top: 15px; margin-bottom: 10px; font-size: 15px; color: var(--text-color);">Fan Control</h3>
+                <label class="checkbox-label"><input type="checkbox" id="enable_fan"> Enable PoE Fan automatic control</label>
+                <div class="flex-row">
+                    <div><label>Turn ON Temp (°C)</label><input type="number" id="fan_on" step="0.5"></div>
+                    <div><label>Turn OFF Temp (°C)</label><input type="number" id="fan_off" step="0.5"></div>
+                </div>
+                <label>Minimum Fan Run Time (sec, anti-flutter)</label>
+                <input type="number" id="fan_min_run" step="1">
+
+                <h3 style="margin-top: 15px; margin-bottom: 10px; font-size: 15px; color: var(--text-color);">OLED Display & Warnings</h3>
+                <label class="checkbox-label"><input type="checkbox" id="enable_screen"> Enable OLED screen</label>
+                <label>Brightness: <span id="brightness_val" style="color: var(--text-color); font-weight:normal;">255</span></label>
+                <input type="range" id="brightness" min="0" max="255">
+                <div class="flex-row">
+                    <div><label class="checkbox-label"><input type="checkbox" id="rotate_180"> Rotate 180°</label></div>
+                    <div><label class="checkbox-label"><input type="checkbox" id="invert_colors"> Invert Colors</label></div>
+                </div>
+                <label class="checkbox-label"><input type="checkbox" id="pixel_shift"> Enable Pixel Shift Screensaver (Anti-burn-in)</label>
+                <label class="checkbox-label" style="margin-top: 10px;"><input type="checkbox" id="show_warnings"> Show flashing Temp/Voltage warnings</label>
+                <label>Warning Trigger Temp (°C)</label>
+                <input type="number" id="warn_temp" step="0.5">
+                
+                <h3 style="margin-top: 15px; margin-bottom: 10px; font-size: 15px; color: var(--text-color);">Quiet Hours (Night Mode)</h3>
+                <label class="checkbox-label"><input type="checkbox" id="quiet_enabled"> Enable Quiet Hours (Disables Screen & Fan)</label>
+                <div class="flex-row">
+                    <div><label>Start Time</label><input type="time" id="quiet_start"></div>
+                    <div><label>End Time</label><input type="time" id="quiet_end"></div>
+                </div>
+
+                <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 20px 0;">
+                <div class="flex-row">
+                    <div><label>Default Page Duration (sec)</label><input type="number" id="global_dur" step="1"></div>
+                    <div><label>Network Scan Interval (sec)</label><input type="number" id="net_interval" step="1"></div>
+                </div>
+                <div class="flex-row">
+                    <div><label>Hardware Scan Interval (sec)</label><input type="number" id="hw_interval" step="1"></div><div></div>
+                </div>
+                
+                <button class="btn btn-primary" style="margin-top: 10px;" onclick="saveOLEDConfig()">💾 Save & Apply to OLED</button>
+                <button class="btn" style="margin-top: 10px; border: 1px solid #888;" onclick="resetOLEDConfig()">⚠️ Factory Reset Config</button>
+                <div id="oledMsg" class="hidden" style="margin-top: 15px;"></div>
+            </div>
+
+            <!-- Pages Configuration Panel -->
+            <div class="panel">
+                <div class="preview-container">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h3 style="margin: 0;">OLED Live Preview</h3>
+                        <select id="previewPageSelect" onchange="renderPreview()" style="width: auto; padding: 4px 8px; margin: 0; font-size: 13px;"></select>
+                    </div>
+                    <div class="oled-box" id="oledBoxElem">
+                        <div id="oledPreviewText" class="oled-text"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; max-width: 256px; margin-left: auto; margin-right: auto;">
+                        <div style="font-size: 11px; color: #888;">Simulated Layout</div>
+                        <label class="checkbox-label" style="font-size: 11px; margin-bottom: 0; color: #888;"><input type="checkbox" id="exact_preview_toggle" checked onchange="renderPreview()" style="margin: 0 4px 0 0;"> Exact Rotation</label>
+                    </div>
+                    <div id="previewWarnings" class="preview-warning"></div>
+                </div>
+                
+                <div style="margin-bottom: 25px; padding: 20px; background: var(--card-bg); border: 1px solid var(--input-border); border-radius: 8px;">
+                    <h3 style="margin-top: 0; margin-bottom: 15px; color: var(--text-color); border-bottom: 1px solid var(--input-border); padding-bottom: 10px;">Configuration Guide</h3>
+                    <p style="margin: 5px 0 10px 0; font-size: 13px;">Type these exact markers in any custom text line to inject live data onto the screen:</p>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-family: 'Courier New', Courier, monospace; font-size: 12px; background: var(--input-bg); padding: 12px; border-radius: 6px; border: 1px solid var(--input-border); color: var(--text-color);">
+                        <div>{time} &nbsp;&nbsp;→ <span id="doc_time">--:--:--</span></div>
+                        <div>{date} &nbsp;&nbsp;→ <span id="doc_date">----</span></div>
+                        <div>{hour} / {minute} / {second}</div>
+                        <div>{day} / {month} / {year}</div>
+                        <div>{temp} &nbsp;&nbsp;→ <span id="doc_temp">--</span></div>
+                        <div>{web_port} → <span id="doc_port">--</span></div>
+                        <div>{wifi_ssid}→ <span id="doc_wifi">--</span></div>
+                        <div>{ap_ssid} &nbsp;→ <span id="doc_hs">--</span></div>
+                        <div>{ap_pw} &nbsp;&nbsp;&nbsp;→ <span id="doc_pw">--</span></div>
+                        <div>{ap_ip} &nbsp;&nbsp;&nbsp;→ <span id="doc_ip">--</span></div>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0;">Screen Pages</h3>
+                    <button class="btn" style="width: auto; margin: 0; padding: 6px 12px;" onclick="addPage()">+ Add Page</button>
+                </div>
+                <div id="pagesContainer"></div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Version Footer -->
+        <div class="footer">
+            WiFi UI v{{ local_wifi_version }} 
+            {% if oled_installed %} | OLED v{{ local_oled_version }} {% endif %}
+            <br>
+            <span onclick="checkForUpdates()">Check for updates</span>
+        </div>
     </div>
-
-    <script>
-        let interfacesData = [];
-        
-        // Toggles the interface between dark and light themes, saving preference in localStorage
-        function toggleTheme() {
-            const isLight = document.body.classList.toggle('light-mode');
-            localStorage.setItem('theme', isLight ? 'light' : 'dark');
-            document.getElementById('themeToggle').innerText = isLight ? '🌙 Dark' : '☀️ Light';
-        }
-        document.getElementById('themeToggle').innerText = document.body.classList.contains('light-mode') ? '🌙 Dark' : '☀️ Light';
-
-        // Fetches available network interfaces from the backend to populate the interface selector
-        async function loadInterfaces() {
-            try {
-                const res = await fetch('/interfaces');
-                const data = await res.json();
-                interfacesData = data.interfaces;
-                const select = document.getElementById('interfaceSelect');
-                select.innerHTML = '';
-                if (data.interfaces.length === 0) { select.style.display = 'none'; return; }
-                data.interfaces.forEach(iface => {
-                    const opt = document.createElement('option');
-                    opt.value = iface.name;
-                    opt.innerText = iface.name + (iface.is_hotspot ? ' (Running Hotspot)' : '');
-                    select.appendChild(opt);
-                });
-                if (data.default) select.value = data.default;
-                checkWarning();
-                if (data.interfaces.length <= 1) select.style.display = 'none';
-            } catch (err) {}
-        }
-
-        // Checks if the selected interface is running a hotspot and displays a warning to the user
-        function checkWarning() {
-            const selected = document.getElementById('interfaceSelect').value;
-            const iface = interfacesData.find(i => i.name === selected);
-            const warning = document.getElementById('hotspotWarning');
-            if (iface && iface.is_hotspot) warning.classList.remove('hidden');
-            else warning.classList.add('hidden');
-        }
-
-        // Triggers a network scan via the backend and updates the SSID dropdown list
-        async function scanNetworks() {
-            const scanBtn = document.getElementById('scanBtn');
-            const connectForm = document.getElementById('connectForm');
-            const ssidSelect = document.getElementById('ssidSelect');
-            const device = document.getElementById('interfaceSelect').value;
-            scanBtn.innerText = "Searching..."; scanBtn.disabled = true; showMessage('', '');
-            try {
-                const response = await fetch('/scan?device=' + encodeURIComponent(device));
-                const data = await response.json();
-                if (data.status === 'success') {
-                    ssidSelect.innerHTML = '<option value="">Select a network...</option>';
-                    data.networks.forEach(net => {
-                        const option = document.createElement('option');
-                        option.value = net.ssid; option.innerText = `${net.ssid} (Signal: ${net.signal}%)`;
-                        ssidSelect.appendChild(option);
-                    });
-                    connectForm.classList.remove('hidden');
-                    scanBtn.innerText = "Refresh Networks";
-                } else {
-                    showMessage('error', 'Error: ' + data.message); scanBtn.innerText = "Search";
-                }
-            } catch (err) { showMessage('error', 'Network error.'); scanBtn.innerText = "Search"; }
-            scanBtn.disabled = false;
-        }
-
-        // Packages user input and posts connection request to the backend API
-        async function connectNetwork() {
-            const connectBtn = document.getElementById('connectBtn');
-            const ssid = document.getElementById('ssidSelect').value;
-            const password = document.getElementById('password').value;
-            const autoconnect = document.getElementById('autoconnect').checked;
-            const device = document.getElementById('interfaceSelect').value;
-            if (!ssid) return showMessage('error', 'Select a network.');
-            connectBtn.innerText = "Connecting..."; connectBtn.disabled = true; showMessage('', '');
-            try {
-                const response = await fetch('/connect', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ssid, password, autoconnect, device })
-                });
-                const data = await response.json();
-                if (data.status === 'success') { showMessage('success', data.message); document.getElementById('password').value = ''; loadInterfaces(); }
-                else { showMessage('error', 'Failed: ' + data.message); }
-            } catch (err) { showMessage('error', 'Network error.'); }
-            connectBtn.innerText = "Connect"; connectBtn.disabled = false;
-        }
-
-        // Sends a disconnect request for the selected interface to the backend API
-        async function disconnectNetwork() {
-            const btn = document.getElementById('disconnectBtn');
-            const device = document.getElementById('interfaceSelect').value;
-            btn.innerText = "Disconnecting..."; btn.disabled = true; showMessage('', '');
-            try {
-                const response = await fetch('/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device }) });
-                const data = await response.json();
-                if (data.status === 'success') { showMessage('success', data.message); loadInterfaces(); }
-                else { showMessage('error', 'Failed: ' + data.message); }
-            } catch (err) { showMessage('error', 'Network error.'); }
-            btn.innerText = "Disconnect Current WiFi"; btn.disabled = false;
-        }
-
-        // Utility function to inject status messages (success/error) into the DOM briefly
-        function showMessage(type, text) {
-            const msgDiv = document.getElementById('message');
-            if (!text) { msgDiv.className = 'hidden'; return; }
-            msgDiv.innerText = text; msgDiv.className = type;
-        }
-        
-        // Execute UI initialization on load
-        window.onload = loadInterfaces;
-    </script>
+    
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
