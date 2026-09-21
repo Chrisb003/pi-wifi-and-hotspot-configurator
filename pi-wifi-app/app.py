@@ -701,19 +701,17 @@ def interfaces():
 def scan():
     """
     API Endpoint: Executes an nmcli WiFi scan on the requested network adapter.
-    The artificial Hotspot block has been removed to allow concurrent AP/Scan 
-    operations on supported hardware.
     """
     try:
         device = request.args.get('device')
-                
-        cmd = ['nmcli', '-t', '-f', 'SSID,SIGNAL', 'dev', 'wifi']
+        
+        # We must explicitly use 'list' before 'ifname' for nmcli to understand the command
+        cmd = ['nmcli', '-t', '-f', 'SSID,SIGNAL', 'dev', 'wifi', 'list']
         if device: cmd.extend(['ifname', device])
             
         result = subprocess.run(cmd, capture_output=True, text=True)
         networks = []
         
-        # If the scan command succeeds, parse the results
         if result.returncode == 0:
             lines = result.stdout.strip().split('\n')
             seen = set()
@@ -725,8 +723,6 @@ def scan():
                         networks.append({'ssid': ssid, 'signal': signal})
             return jsonify({'networks': networks, 'status': 'success'})
         else:
-            # If the hardware specifically rejects scanning while the AP is active, 
-            # pass the real system error back to the user interface.
             error_msg = result.stderr.strip()
             if not error_msg: error_msg = "Scan failed. Hardware may be busy."
             return jsonify({'status': 'error', 'message': error_msg})
