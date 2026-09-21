@@ -417,8 +417,10 @@ def check_auth():
         RAM_CACHE['auth_enabled'] = os.path.exists(user_file)
         
     if RAM_CACHE['auth_enabled']:
-        if request.endpoint not in ['login', 'static'] and not session.get('logged_in'):
-            return redirect(url_for('login'))
+        # Allow the 'index' route to pass through because it renders the login screen natively!
+        if request.endpoint not in ['index', 'login', 'static'] and not session.get('logged_in'):
+            # If an unauthenticated user tries to hit an API endpoint directly, redirect them to the index/login
+            return redirect(url_for('index'))
 
 @app.context_processor
 def inject_global_vars():
@@ -438,7 +440,8 @@ def inject_global_vars():
 @app.route('/')
 def index():
     """Renders the single page application. Serves the login screen if authentication is required."""
-    needs_login = os.path.exists(user_file) and not session.get('logged_in')
+    # FIXED: Check the RAM cache instead of hitting the SD card
+    needs_login = RAM_CACHE.get('auth_enabled') and not session.get('logged_in')
     
     # If the user needs to log in, render the page immediately to hide backend data
     if needs_login:
