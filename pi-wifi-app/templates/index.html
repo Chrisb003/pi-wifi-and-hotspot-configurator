@@ -182,113 +182,117 @@
         <!-- SECTION: OLED CONFIGURATOR (Conditional)                            -->
         <!-- ------------------------------------------------------------------- -->
         {% if oled_installed %}
-        <div id="section-oled" class="nav-section grid">
-            
-            <!-- OLED Panel 1: Hardware & Global Variables -->
-            <div class="panel">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h2 style="margin: 0;">Global Settings</h2>
-                    <span id="liveTemp" class="live-badge">Pi: --.-°C</span>
-                </div>
+        <div id="section-oled" class="nav-section">
+            <!-- NEW: Dedicated grid wrapper so JS 'block' display doesn't break the layout -->
+            <div class="grid">
                 
-                <!-- Fan Configuration -->
-                <h3 style="margin-top: 15px; margin-bottom: 10px; font-size: 15px; color: var(--text-color);">Fan Control</h3>
-                <label class="checkbox-label"><input type="checkbox" id="enable_fan"> Enable PoE Fan automatic control</label>
-                <div class="flex-row">
-                    <div><label>Turn ON Temp (°C)</label><input type="number" id="fan_on" step="0.5"></div>
-                    <div><label>Turn OFF Temp (°C)</label><input type="number" id="fan_off" step="0.5"></div>
-                </div>
-                <label>Minimum Fan Run Time (sec, anti-flutter)</label>
-                <input type="number" id="fan_min_run" step="1">
+                <!-- OLED Panel 1: Hardware & Global Variables -->
+                <div class="panel">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h2 style="margin: 0;">Global Settings</h2>
+                        <span id="liveTemp" class="live-badge">Pi: --.-°C</span>
+                    </div>
+                    
+                    <!-- Fan Configuration -->
+                    <h3 style="margin-top: 15px; margin-bottom: 10px; font-size: 15px; color: var(--text-color);">Fan Control</h3>
+                    <label class="checkbox-label"><input type="checkbox" id="enable_fan"> Enable PoE Fan automatic control</label>
+                    <div class="flex-row">
+                        <div><label>Turn ON Temp (°C)</label><input type="number" id="fan_on" step="0.5"></div>
+                        <div><label>Turn OFF Temp (°C)</label><input type="number" id="fan_off" step="0.5"></div>
+                    </div>
+                    <label>Minimum Fan Run Time (sec, anti-flutter)</label>
+                    <input type="number" id="fan_min_run" step="1">
 
-                <!-- Display Toggles -->
-                <h3 style="margin-top: 15px; margin-bottom: 10px; font-size: 15px; color: var(--text-color);">OLED Display & Warnings</h3>
-                <label class="checkbox-label"><input type="checkbox" id="enable_screen"> Enable OLED screen</label>
-                <label>Brightness: <span id="brightness_val" style="color: var(--text-color); font-weight:normal;">255</span></label>
-                <input type="range" id="brightness" min="0" max="255">
-                <div class="flex-row">
-                    <div><label class="checkbox-label"><input type="checkbox" id="rotate_180"> Rotate 180°</label></div>
-                    <div><label class="checkbox-label"><input type="checkbox" id="invert_colors"> Invert Colors</label></div>
-                </div>
-                <label class="checkbox-label"><input type="checkbox" id="pixel_shift"> Enable Pixel Shift Screensaver (Anti-burn-in)</label>
-                
-                <!-- Warnings Trigger -->
-                <label class="checkbox-label" style="margin-top: 10px;"><input type="checkbox" id="show_warnings"> Show flashing Temp/Voltage warnings</label>
-                <label>Warning Trigger Temp (°C)</label>
-                <input type="number" id="warn_temp" step="0.5">
-                
-                <!-- Quiet Hours / Night Mode -->
-                <h3 style="margin-top: 15px; margin-bottom: 10px; font-size: 15px; color: var(--text-color);">Quiet Hours (Night Mode)</h3>
-                <label class="checkbox-label"><input type="checkbox" id="quiet_enabled"> Enable Quiet Hours (Disables Screen & Fan)</label>
-                <div class="flex-row">
-                    <div><label>Start Time</label><input type="time" id="quiet_start"></div>
-                    <div><label>End Time</label><input type="time" id="quiet_end"></div>
-                </div>
+                    <!-- Display Toggles -->
+                    <h3 style="margin-top: 15px; margin-bottom: 10px; font-size: 15px; color: var(--text-color);">OLED Display & Warnings</h3>
+                    <label class="checkbox-label"><input type="checkbox" id="enable_screen"> Enable OLED screen</label>
+                    <label>Brightness: <span id="brightness_val" style="color: var(--text-color); font-weight:normal;">255</span></label>
+                    <input type="range" id="brightness" min="0" max="255">
+                    <div class="flex-row">
+                        <div><label class="checkbox-label"><input type="checkbox" id="rotate_180"> Rotate 180°</label></div>
+                        <div><label class="checkbox-label"><input type="checkbox" id="invert_colors"> Invert Colors</label></div>
+                    </div>
+                    <label class="checkbox-label"><input type="checkbox" id="pixel_shift"> Enable Pixel Shift Screensaver (Anti-burn-in)</label>
+                    
+                    <!-- Warnings Trigger -->
+                    <label class="checkbox-label" style="margin-top: 10px;"><input type="checkbox" id="show_warnings"> Show flashing Temp/Voltage warnings</label>
+                    <label>Warning Trigger Temp (°C)</label>
+                    <input type="number" id="warn_temp" step="0.5">
+                    
+                    <!-- Quiet Hours / Night Mode -->
+                    <h3 style="margin-top: 15px; margin-bottom: 10px; font-size: 15px; color: var(--text-color);">Quiet Hours (Night Mode)</h3>
+                    <label class="checkbox-label"><input type="checkbox" id="quiet_enabled"> Enable Quiet Hours (Disables Screen & Fan)</label>
+                    <div class="flex-row">
+                        <div><label>Start Time</label><input type="time" id="quiet_start"></div>
+                        <div><label>End Time</label><input type="time" id="quiet_end"></div>
+                    </div>
 
-                <!-- Backend Polling Intervals -->
-                <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 20px 0;">
-                <div class="flex-row">
-                    <div><label>Default Page Duration (sec)</label><input type="number" id="global_dur" step="1"></div>
-                    <div><label>Network Scan Interval (sec)</label><input type="number" id="net_interval" step="1"></div>
-                </div>
-                <div class="flex-row">
-                    <div><label>Hardware Scan Interval (sec)</label><input type="number" id="hw_interval" step="1"></div><div></div>
-                </div>
-                
-                <!-- Save / Reset Actions -->
-                <button class="btn btn-primary" style="margin-top: 10px;" onclick="saveOLEDConfig()">💾 Save & Apply to OLED</button>
-                <button class="btn" style="margin-top: 10px; border: 1px solid #888;" onclick="resetOLEDConfig()">⚠️ Factory Reset Config</button>
-                <div id="oledMsg" class="hidden" style="margin-top: 15px;"></div>
-            </div>
-
-            <!-- OLED Panel 2: Live Preview & Page Builder -->
-            <div class="panel">
-                
-                <!-- Live Simulated OLED Canvas -->
-                <div class="preview-container">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <h3 style="margin: 0;">OLED Live Preview</h3>
-                        <select id="previewPageSelect" onchange="renderPreview()" style="width: auto; padding: 4px 8px; margin: 0; font-size: 13px;"></select>
+                    <!-- Backend Polling Intervals -->
+                    <hr style="border: 0; border-top: 1px solid var(--input-border); margin: 20px 0;">
+                    <div class="flex-row">
+                        <div><label>Default Page Duration (sec)</label><input type="number" id="global_dur" step="1"></div>
+                        <div><label>Network Scan Interval (sec)</label><input type="number" id="net_interval" step="1"></div>
                     </div>
-                    <div class="oled-box" id="oledBoxElem">
-                        <div id="oledPreviewText" class="oled-text"></div>
+                    <div class="flex-row">
+                        <div><label>Hardware Scan Interval (sec)</label><input type="number" id="hw_interval" step="1"></div><div></div>
                     </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; max-width: 256px; margin-left: auto; margin-right: auto;">
-                        <div style="font-size: 11px; color: #888;">Simulated Layout</div>
-                        <label class="checkbox-label" style="font-size: 11px; margin-bottom: 0; color: #888;">
-                            <input type="checkbox" id="exact_preview_toggle" checked onchange="renderPreview()" style="margin: 0 4px 0 0;"> Exact Rotation
-                        </label>
-                    </div>
-                    <!-- Warnings appear here if the screen is disabled or hotspot is off -->
-                    <div id="previewWarnings" class="preview-warning"></div>
-                </div>
-                
-                <!-- Cheat Sheet for Dynamic Variables -->
-                <div style="margin-bottom: 25px; padding: 20px; background: var(--card-bg); border: 1px solid var(--input-border); border-radius: 8px;">
-                    <h3 style="margin-top: 0; margin-bottom: 15px; color: var(--text-color); border-bottom: 1px solid var(--input-border); padding-bottom: 10px;">Configuration Guide</h3>
-                    <p style="margin: 5px 0 10px 0; font-size: 13px;">Type these exact markers in any custom text line to inject live data onto the screen:</p>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-family: 'Courier New', Courier, monospace; font-size: 12px; background: var(--input-bg); padding: 12px; border-radius: 6px; border: 1px solid var(--input-border); color: var(--text-color);">
-                        <!-- The spans are updated in real-time by JS calling /api/system/status -->
-                        <div>{time} &nbsp;&nbsp;→ <span id="doc_time">--:--:--</span></div>
-                        <div>{date} &nbsp;&nbsp;→ <span id="doc_date">----</span></div>
-                        <div>{hour} / {minute} / {second}</div>
-                        <div>{day} / {month} / {year}</div>
-                        <div>{temp} &nbsp;&nbsp;→ <span id="doc_temp">--</span></div>
-                        <div>{web_port} → <span id="doc_port">--</span></div>
-                        <div>{wifi_ssid}→ <span id="doc_wifi">--</span></div>
-                        <div>{ap_ssid} &nbsp;→ <span id="doc_hs">--</span></div>
-                        <div>{ap_pw} &nbsp;&nbsp;&nbsp;→ <span id="doc_pw">--</span></div>
-                        <div>{ap_ip} &nbsp;&nbsp;&nbsp;→ <span id="doc_ip">--</span></div>
-                    </div>
+                    
+                    <!-- Save / Reset Actions -->
+                    <button class="btn btn-primary" style="margin-top: 10px;" onclick="saveOLEDConfig()">💾 Save & Apply to OLED</button>
+                    <button class="btn" style="margin-top: 10px; border: 1px solid #888;" onclick="resetOLEDConfig()">⚠️ Factory Reset Config</button>
+                    <div id="oledMsg" class="hidden" style="margin-top: 15px;"></div>
                 </div>
 
-                <!-- Page Array Builder (Injected by JS) -->
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h3 style="margin: 0;">Screen Pages</h3>
-                    <button class="btn" style="width: auto; margin: 0; padding: 6px 12px;" onclick="addPage()">+ Add Page</button>
+                <!-- OLED Panel 2: Live Preview & Page Builder -->
+                <div class="panel">
+                    
+                    <!-- Live Simulated OLED Canvas -->
+                    <div class="preview-container">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h3 style="margin: 0;">OLED Live Preview</h3>
+                            <select id="previewPageSelect" onchange="renderPreview()" style="width: auto; padding: 4px 8px; margin: 0; font-size: 13px;"></select>
+                        </div>
+                        <div class="oled-box" id="oledBoxElem">
+                            <div id="oledPreviewText" class="oled-text"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px; max-width: 256px; margin-left: auto; margin-right: auto;">
+                            <div style="font-size: 11px; color: #888;">Simulated Layout</div>
+                            <label class="checkbox-label" style="font-size: 11px; margin-bottom: 0; color: #888;">
+                                <input type="checkbox" id="exact_preview_toggle" checked onchange="renderPreview()" style="margin: 0 4px 0 0;"> Exact Rotation
+                            </label>
+                        </div>
+                        <!-- Warnings appear here if the screen is disabled or hotspot is off -->
+                        <div id="previewWarnings" class="preview-warning"></div>
+                    </div>
+                    
+                    <!-- Cheat Sheet for Dynamic Variables -->
+                    <div style="margin-bottom: 25px; padding: 20px; background: var(--card-bg); border: 1px solid var(--input-border); border-radius: 8px;">
+                        <h3 style="margin-top: 0; margin-bottom: 15px; color: var(--text-color); border-bottom: 1px solid var(--input-border); padding-bottom: 10px;">Configuration Guide</h3>
+                        <p style="margin: 5px 0 10px 0; font-size: 13px;">Type these exact markers in any custom text line to inject live data onto the screen:</p>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-family: 'Courier New', Courier, monospace; font-size: 12px; background: var(--input-bg); padding: 12px; border-radius: 6px; border: 1px solid var(--input-border); color: var(--text-color);">
+                            <!-- The spans are updated in real-time by JS calling /api/system/status -->
+                            <div>{time} &nbsp;&nbsp;→ <span id="doc_time">--:--:--</span></div>
+                            <div>{date} &nbsp;&nbsp;→ <span id="doc_date">----</span></div>
+                            <div>{hour} / {minute} / {second}</div>
+                            <div>{day} / {month} / {year}</div>
+                            <div>{temp} &nbsp;&nbsp;→ <span id="doc_temp">--</span></div>
+                            <div>{web_port} → <span id="doc_port">--</span></div>
+                            <div>{wifi_ssid}→ <span id="doc_wifi">--</span></div>
+                            <div>{ap_ssid} &nbsp;→ <span id="doc_hs">--</span></div>
+                            <div>{ap_pw} &nbsp;&nbsp;&nbsp;→ <span id="doc_pw">--</span></div>
+                            <div>{ap_ip} &nbsp;&nbsp;&nbsp;→ <span id="doc_ip">--</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Page Array Builder (Injected by JS) -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0;">Screen Pages</h3>
+                        <button class="btn" style="width: auto; margin: 0; padding: 6px 12px;" onclick="addPage()">+ Add Page</button>
+                    </div>
+                    <div id="pagesContainer"></div>
                 </div>
-                <div id="pagesContainer"></div>
-            </div>
+                
+            </div> <!-- End of .grid -->
         </div>
         {% endif %}
 

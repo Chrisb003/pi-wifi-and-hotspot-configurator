@@ -692,21 +692,19 @@ def interfaces():
 def scan():
     """
     API Endpoint: Executes an nmcli WiFi scan on the requested network adapter.
-    Validates that the target interface is not currently running an Access Point, 
-    which would cause the scan command to fail on physical hardware.
+    The artificial Hotspot block has been removed to allow concurrent AP/Scan 
+    operations on supported hardware.
     """
     try:
         device = request.args.get('device')
-        info = get_interfaces_info()
-        for iface in info['interfaces']:
-            if (not device or iface['name'] == device) and iface['is_hotspot']:
-                return jsonify({'status': 'error', 'message': f'Cannot scan: Interface {iface["name"]} is running a Hotspot. Disable it first.'})
                 
         cmd = ['nmcli', '-t', '-f', 'SSID,SIGNAL', 'dev', 'wifi']
         if device: cmd.extend(['ifname', device])
             
         result = subprocess.run(cmd, capture_output=True, text=True)
         networks = []
+        
+        # If the scan command succeeds, parse the results
         if result.returncode == 0:
             lines = result.stdout.strip().split('\n')
             seen = set()
@@ -716,9 +714,17 @@ def scan():
                     if ssid and ssid not in seen:
                         seen.add(ssid)
                         networks.append({'ssid': ssid, 'signal': signal})
-        return jsonify({'networks': networks, 'status': 'success'})
-    except Exception as e: return jsonify({'status': 'error', 'message': str(e)})
-
+            return jsonify({'networks': networks, 'status': 'success'})
+        else:
+            # If the hardware specifically rejects scanning while the AP is active, 
+            # pass the real system error back to the user interface.
+            error_msg = result.stderr.strip()
+            if not error_msg: error_msg = "Scan failed. Hardware may be busy."
+            return jsonify({'status': 'error', 'message': error_msg})
+            
+    except Exception as e: 
+        return jsonify({'status': 'error', 'message': str(e)})
+    
 @app.route('/connect', methods=['POST'])
 def connect():
     """

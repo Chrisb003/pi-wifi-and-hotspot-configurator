@@ -33,11 +33,11 @@ body {
     background-color: var(--bg-color); 
     color: var(--text-color); 
     margin: 0; 
-    padding: 20px; 
+    padding: 20px 20px 80px 20px; /* Added 80px bottom padding for the fixed footer */
     display: flex; 
     flex-direction: column; 
     align-items: center; 
-    min-height: 100vh; /* Ensures the footer stays at the absolute bottom */
+    min-height: 100vh; 
     transition: background-color 0.3s, color 0.3s; 
 }
 
@@ -154,10 +154,23 @@ body.light-mode .preview-warning { background-color: #fff3cd; color: #856404; bo
 /* ==========================================================================
    FOOTER
    ========================================================================== */
-.footer { margin-top: auto; text-align: right; font-size: 12px; color: #888; padding-top: 15px; border-top: 1px solid var(--input-border); }
+.footer { 
+    position: fixed;            /* Forces the footer to stay locked in place */
+    bottom: 0;                  /* Locks it to the absolute bottom of the window */
+    left: 0;
+    width: 100%;
+    background-color: var(--bg-color); /* Creates a solid background matching the theme */
+    text-align: center;         /* Centered looks best on full-width sticky footers */
+    font-size: 12px; 
+    color: #888; 
+    padding: 15px; 
+    border-top: 1px solid var(--input-border); 
+    z-index: 100;               /* Ensures the footer always hovers over scrolling content */
+    box-sizing: border-box;
+    transition: background-color 0.3s; /* Ensures smooth transition during dark/light mode switches */
+}
 .footer span { cursor: pointer; transition: color 0.2s; }
 .footer span:hover { color: var(--link-color); text-decoration: underline; }
-
 /* ==========================================================================
    MODALS, OVERLAYS & UPDATER
    ========================================================================== */
