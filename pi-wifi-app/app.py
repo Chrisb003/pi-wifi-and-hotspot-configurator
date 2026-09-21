@@ -811,11 +811,16 @@ def interfaces():
 def scan():
     """
     API Endpoint: Executes an nmcli WiFi scan on the requested network adapter.
+    Filters out the active Hotspot SSID to prevent self-connection loops.
     """
     try:
         device = request.args.get('device')
         
-        # We must explicitly use 'list' before 'ifname' for nmcli to understand the command
+        # 1. Fetch current hotspot config to find the SSID we need to hide
+        hs_config = get_hotspot_config()
+        ignore_ssid = hs_config.get('ssid') if hs_config.get('active') else None
+        
+        # 2. Execute the scan (We must explicitly use 'list' before 'ifname' for nmcli)
         cmd = ['nmcli', '-t', '-f', 'SSID,SIGNAL', 'dev', 'wifi', 'list']
         if device: cmd.extend(['ifname', device])
             
@@ -828,9 +833,12 @@ def scan():
             for line in lines:
                 if ':' in line:
                     ssid, signal = line.split(':', 1)
-                    if ssid and ssid not in seen:
+                    
+                    # 3. Filter out empty SSIDs, duplicates, AND the active hotspot itself!
+                    if ssid and ssid not in seen and ssid != ignore_ssid:
                         seen.add(ssid)
                         networks.append({'ssid': ssid, 'signal': signal})
+                        
             return jsonify({'networks': networks, 'status': 'success'})
         else:
             error_msg = result.stderr.strip()
@@ -839,13 +847,13 @@ def scan():
             
     except Exception as e: 
         return jsonify({'status': 'error', 'message': str(e)})
-    
+
 @app.route('/connect', methods=['POST'])
 def connect():
     """
     API Endpoint: Executes nmcli to connect to a specific SSID. 
     Applies user-selected autoconnect policies after a successful connection.
-    Ensures that Hostpot priorities remain intact if they were previously forced.
+    If the connection fails, gracefully restores the Hotspot if it was previously active.
     """
     data = request.json
     ssid = data.get('ssid')
@@ -855,18 +863,38 @@ def connect():
 
     if not ssid: return jsonify({'status': 'error', 'message': 'SSID is required'})
     try:
+        # 1. Capture current hotspot state before attempting the new connection
+        hs_config = get_hotspot_config()
+        hs_was_active = hs_config.get('active', False)
+        hs_name = hs_config.get('name', 'Hotspot')
+
+        # 2. Attempt the Wi-Fi connection
         cmd = ['nmcli', 'dev', 'wifi', 'connect', ssid]
         if password: cmd.extend(['password', password])
         if device: cmd.extend(['ifname', device])
             
         result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        # 3. Handle Success
         if result.returncode == 0:
             ac_val = 'yes' if autoconnect else 'no'
             subprocess.run(['nmcli', 'con', 'modify', ssid, 'connection.autoconnect', ac_val, 'connection.autoconnect-priority', '0'])
             if get_hotspot_policy(): set_hotspot_priority(100)
             return jsonify({'status': 'success', 'message': f'Successfully connected to {ssid}.'})
-        else: return jsonify({'status': 'error', 'message': result.stderr.strip()})
-    except Exception as e: return jsonify({'status': 'error', 'message': str(e)})
+            
+        # 4. Handle Failure & Restore Hotspot
+        else:
+            error_msg = result.stderr.strip()
+            
+            if hs_was_active and hs_name:
+                # Bring the hotspot back online since the new Wi-Fi failed
+                subprocess.run(['sudo', 'nmcli', 'con', 'up', hs_name], capture_output=True)
+                error_msg += " (Restored previous Hotspot connection)."
+                
+            return jsonify({'status': 'error', 'message': error_msg})
+            
+    except Exception as e: 
+        return jsonify({'status': 'error', 'message': str(e)})
 
 @app.route('/disconnect', methods=['POST'])
 def disconnect():

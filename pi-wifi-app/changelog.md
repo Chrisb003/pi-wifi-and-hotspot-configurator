@@ -1,4 +1,8 @@
 # Changelog
+## [1.0.7] - Wifi connection fixes
+* Hotspot wifi no longer appears in wifi list
+* If the wifi connection fails and the hotspot was enabled it will reenable allowing you to retry.
+
 ## [1.0.6] - Fix for hotspot
 * Fix for hotspot. Hopefully final.
 
