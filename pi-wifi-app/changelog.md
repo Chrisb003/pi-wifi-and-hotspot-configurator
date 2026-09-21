@@ -1,5 +1,7 @@
 # Changelog
-# Changelog
+## [1.0.6] - Fix for hotspot
+* Fix for hotspot. Hopefully final.
+
 ## [1.0.5] - Reduce i/o usage of sd card
 * Reduce i/o usage of sd card.
 

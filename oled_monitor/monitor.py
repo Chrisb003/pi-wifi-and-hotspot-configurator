@@ -397,6 +397,20 @@ def get_networks():
     except Exception: pass
     return networks
 
+def get_nm_prop(con_name, *props):
+    """Safely fetches NetworkManager properties by testing known OS aliases."""
+    for p in props:
+        val = subprocess.run(['nmcli', '-g', p, 'con', 'show', con_name], capture_output=True, text=True).stdout.strip()
+        if val: return val
+    return ""
+
+def get_nm_sec_prop(con_name, *props):
+    """Safely fetches NetworkManager secrets by testing known OS aliases with sudo."""
+    for p in props:
+        val = subprocess.run(['sudo', 'nmcli', '-s', '-g', p, 'con', 'show', con_name], capture_output=True, text=True).stdout.strip()
+        if val: return val
+    return ""
+
 def get_hotspot_details():
     """
     Interrogates NetworkManager to see if an Access Point (Hotspot) is currently active.
@@ -411,12 +425,17 @@ def get_hotspot_details():
             if len(parts) == 2 and parts[1] in ['802-11-wireless', 'wifi']:
                 name = parts[0]
                 mode = subprocess.run(['nmcli', '-g', '802-11-wireless.mode', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                if not mode: mode = subprocess.run(['nmcli', '-g', 'wifi.mode', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                
                 if mode == 'ap':
                     ap_ssid = subprocess.run(['nmcli', '-g', '802-11-wireless.ssid', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                    if not ap_ssid: ap_ssid = subprocess.run(['nmcli', '-g', 'wifi.ssid', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                    
                     ap_psk = subprocess.run(['sudo', 'nmcli', '-s', '-g', 'wifi-sec.psk', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
-                    if not ap_psk:
-                        ap_psk = subprocess.run(['sudo', 'nmcli', '-s', '-g', '802-11-wireless-security.psk', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                    if not ap_psk: ap_psk = subprocess.run(['sudo', 'nmcli', '-s', '-g', '802-11-wireless-security.psk', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                    
                     ap_iface = subprocess.run(['nmcli', '-g', 'GENERAL.DEVICES', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                    if not ap_iface: ap_iface = subprocess.run(['nmcli', '-g', 'connection.interface-name', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
                     
                     if ap_iface:
                         try:
@@ -426,6 +445,7 @@ def get_hotspot_details():
                         
                 elif mode == 'infrastructure':
                     wifi_ssid = subprocess.run(['nmcli', '-g', '802-11-wireless.ssid', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
+                    if not wifi_ssid: wifi_ssid = subprocess.run(['nmcli', '-g', 'wifi.ssid', 'connection', 'show', name], capture_output=True, text=True).stdout.strip()
     except Exception: pass
     
     return ap_ssid, ap_psk, ap_has_clients, ap_iface, wifi_ssid
