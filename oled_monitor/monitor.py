@@ -94,7 +94,8 @@ DEFAULT_JSON = """{
             // --- Port Display Settings ---
             "show_diagnostic_port": true,
             "show_wifi_port": true,
-            "custom_port": "", // E.g., "9000", or leave blank for none
+            // E.g., "9000", or leave blank for none
+            "custom_port": "",
             
             "duration": 20,
             "align": "left",
@@ -232,52 +233,74 @@ cleanup_obsolete_files()
 def load_settings():
     """
     Loads configuration from 'settings.json'. 
-    If the file is missing, or a 'reset' file is found in the directory, 
-    it automatically generates a fresh settings.json using DEFAULT_JSON.
-    It strips Javascript-style comments (//) before parsing so the user can easily read the file.
+    If the file is missing, or a 'reset' file is found, it generates a fresh one.
+    If the file exists but is missing newly added variables (from an update),
+    it automatically injects them and saves the repaired file back to disk.
     """
     settings_file = os.path.join(SCRIPT_DIR, 'settings.json')
     reset_file = os.path.join(SCRIPT_DIR, 'reset')
     
-    # Check for reset trigger or missing config
+    # Parse the DEFAULT_JSON as the master structural template
+    clean_default = re.sub(r'^\s*//.*$', '', DEFAULT_JSON, flags=re.MULTILINE)
+    try: 
+        master_dict = json.loads(clean_default)
+    except Exception: 
+        master_dict = {}
+        
+    # 1. Reset or Missing File Handling
     if os.path.exists(reset_file) or not os.path.exists(settings_file):
         try:
-            with open(settings_file, 'w') as f:
+            with open(settings_file, 'w') as f: 
                 f.write(DEFAULT_JSON)
-            if os.path.exists(reset_file):
+            if os.path.exists(reset_file): 
                 os.remove(reset_file)
         except Exception: pass
+        return master_dict
             
-    # Baseline fallback dict to prevent crashes if JSON is incomplete
-    default_dict = {
-        "enable_screen": True, "enable_fan": True,
-        "brightness": 255, "rotate_180": False, "invert_colors": False,
-        "pixel_shift_screensaver": True, "minimum_fan_run_time_seconds": 60,
-        "quiet_hours_enabled": False, "quiet_hours_start": "22:00", "quiet_hours_end": "07:00",
-        "fan_on_temp": 55.0, "fan_off_temp": 45.0,
-        "show_warnings": True, "warning_temp": 75.0,
-        "page_duration_seconds": 20, 
-        "hardware_update_interval_seconds": 5,
-        "network_update_interval_seconds": 20,
-        "pages": [{"type": "network_list", "show_ap_ip_when_connected": True, "duration": 20}]
-    }
-    
+    # 2. Normal Loading & Auto-Repair Logic
     try:
         with open(settings_file, 'r') as f:
             content = f.read()
-            # Regex to remove '// comment' lines before parsing JSON
             content = re.sub(r'^\s*//.*$', '', content, flags=re.MULTILINE)
             loaded = json.loads(content)
-            # Merge loaded settings over the default dictionary
-            for k, v in loaded.items():
-                default_dict[k] = v
+            
+        needs_update = False
+        
+        # Check for missing top-level keys
+        for key, value in master_dict.items():
+            if key not in loaded and key != "pages":
+                loaded[key] = value
+                needs_update = True
+                
+        # Check for missing page-level variables across all user pages
+        baseline_page = {
+            "duration": 20, "align": "left", "scroll_vertical": True, 
+            "scroll_horizontal": True, "show_ap_ip_when_connected": True, 
+            "hide_when_connected": True, "show_diagnostic_port": True, 
+            "show_wifi_port": True, "custom_port": ""
+        }
+        
+        if "pages" in loaded:
+            for page in loaded["pages"]:
+                for pk, pv in baseline_page.items():
+                    if pk not in page:
+                        page[pk] = pv
+                        needs_update = True
+                        
+        # If features were added via OTA, rewrite the file to include them safely
+        if needs_update:
+            with open(settings_file, 'w') as f:
+                json.dump(loaded, f, indent=4)
+            print("Startup: settings.json successfully auto-repaired and updated.")
+                
+        return loaded
+        
     except json.JSONDecodeError:
         # Flag if JSON is corrupted so we can warn the user on the physical screen
-        default_dict["_error"] = True
-    except Exception: pass
-    
-    return default_dict
-
+        master_dict["_error"] = True
+        return master_dict
+    except Exception: 
+        return master_dict
 
 def get_text_width(text, font):
     """
