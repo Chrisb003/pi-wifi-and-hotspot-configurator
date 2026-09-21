@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - WiFi Configurator</title>
+    <style>
+        :root { --bg-color: #121212; --container-bg: #1e1e1e; --text-color: #ffffff; --input-bg: #2d2d2d; --input-border: #444; }
+        body.light-mode { --bg-color: #f0f2f5; --container-bg: #ffffff; --text-color: #333333; --input-bg: #ffffff; --input-border: #ddd; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; height: 90vh; transition: background-color 0.3s, color 0.3s; }
+        .container { background: var(--container-bg); padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); width: 100%; max-width: 350px; position: relative; }
+        h2 { text-align: center; margin-top: 0; }
+        .theme-toggle { position: absolute; top: 15px; right: 15px; background: transparent; color: var(--text-color); border: 1px solid var(--input-border); padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .theme-toggle:hover { background: var(--input-bg); }
+        input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text-color); border-radius: 6px; box-sizing: border-box; font-size: 16px; }
+        button[type="submit"] { background: #e60042; color: white; border: none; padding: 12px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; transition: background 0.3s; }
+        button[type="submit"]:hover { background: #bf0037; }
+        .error { background-color: #4a141c; color: #ffb3b8; border: 1px solid #8e0015; padding: 10px; border-radius: 5px; text-align: center; margin-bottom: 15px; font-size: 14px;}
+        body.light-mode .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    </style>
+</head>
+<body>
+    <script>if (localStorage.getItem('theme') === 'light') document.body.classList.add('light-mode');</script>
+    <div class="container">
+        <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()">☀️ Light</button>
+        <h2 style="margin-top: 15px;">Login required</h2>
+        {% if error %}<div class="error">{{ error }}</div>{% endif %}
+        <form method="POST">
+            <input type="text" name="username" placeholder="Username" required>
+            <input type="password" name="password" placeholder="Password" required>
+            <button type="submit">Login</button>
+        </form>
+    </div>
+    <script>
+        // Toggles the interface between dark and light themes, saving preference in localStorage
+        function toggleTheme() {
+            const isLight = document.body.classList.toggle('light-mode');
+            localStorage.setItem('theme', isLight ? 'light' : 'dark');
+            document.getElementById('themeToggle').innerText = isLight ? '🌙 Dark' : '☀️ Light';
+        }
+        document.getElementById('themeToggle').innerText = document.body.classList.contains('light-mode') ? '🌙 Dark' : '☀️ Light';
+    </script>
+</body>
+</html>
