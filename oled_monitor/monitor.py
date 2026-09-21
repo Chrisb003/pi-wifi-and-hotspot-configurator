@@ -513,11 +513,15 @@ if ENABLE_SCREEN:
 # Initialize Fan Controller over I2C
 FAN_I2C_ADDR = 0x20
 fan_present = False
-if ENABLE_FAN:
-    try:
-        bus = smbus.SMBus(1)
-        fan_present = True
-    except Exception: pass
+try:
+    bus = smbus.SMBus(1)
+    fan_present = True
+    
+    # FIXED: The hardware fan defaults to ON at boot. We MUST force it OFF 
+    # immediately so the physical hardware matches the software's starting state.
+    # This also guarantees the fan shuts off if you disable it in the Web UI!
+    bus.write_byte(FAN_I2C_ADDR, 0xFF) 
+except Exception: pass
 
 # Global State Variables
 last_hw_fetch, last_net_fetch = 0, 0
@@ -770,7 +774,7 @@ try:
             time.sleep(hw_interval if hw_interval > 0 else 1)
         
 except KeyboardInterrupt:
-    # Cleanup safely if the script is manually terminated
-    if ENABLE_FAN and fan_present:
+    # Cleanup safely if the script is manually terminated or restarted
+    if fan_present:
         try: bus.write_byte(FAN_I2C_ADDR, 0xFF)
         except Exception: pass

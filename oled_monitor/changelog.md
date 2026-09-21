@@ -1,4 +1,7 @@
 # Changelog
+## [1.0.6] - Fan control fix
+* Fan control fix
+
 ## [1.0.5] - Fix for hotspot
 * Fix for hotspot. Hopefully final.
 
